@@ -1,0 +1,50 @@
+# Nervos CKB ecosystem projects watched for upstream dependency advisories.
+#
+# Append freely. Minimum fields: slug, display_name.
+# Optional: manifests (list of paths to known manifests; if omitted the
+# crawler auto-discovers Cargo.toml / package.json / go.mod in the repo root
+# and one level deep).
+#
+# branch defaults to the repo's default branch.
+
+projects:
+  # Core protocol
+  - slug: nervosnetwork/ckb
+    display_name: CKB Node
+  - slug: nervosnetwork/ckb-vm
+    display_name: CKB-VM
+  - slug: nervosnetwork/molecule
+    display_name: Molecule (serialization)
+  - slug: nervosnetwork/fiber
+    display_name: Fiber (payment channels)
+
+  # Light client
+  - slug: nervosnetwork/ckb-light-client
+    display_name: CKB Light Client
+
+  # JS/TS SDKs
+  - slug: ckb-ecofund/ccc
+    display_name: CCC (CKB Common Chain kit)
+  - slug: ckb-js/ckb-js-vm
+    display_name: CKB-JS-VM
+
+  # DOB / Spore
+  - slug: sporeprotocol/spore-sdk
+    display_name: Spore SDK
+
+  # JoyID
+  - slug: nervina-labs/joyid-sdk
+    display_name: JoyID SDK
+
+  # toastmanAu self-watch (real apps built on this stack)
+  - slug: toastmanAu/fiberquest
+    display_name: FiberQuest
+  - slug: toastmanAu/ckb-cell-marketplace
+    display_name: Cellswap / CKB Cell Marketplace
+
+# --- seed list needs user additions here ---
+# Candidates to research:
+#   - cryptape/* organisation repos (Cryptape tooling outside nervosnetwork)
+#   - Japanese / Korean community SDKs
+#   - cellscript, ckb-cinnabar, ckbull (verify org names)
+#   - any CKBFS tooling you rely on
