@@ -1,0 +1,36 @@
+# Copy to config.toml and edit.
+
+[agent]
+data_dir = "data"
+log_level = "info"
+
+[github]
+# Optional token — unauthenticated requests are rate-limited to 60/hour,
+# a token raises the limit to 5000/hour. Create at:
+#   https://github.com/settings/tokens  (scope: public_repo is enough)
+token = ""
+
+[poll]
+# How often (seconds) to poll each source.
+github_repos = 86400    # daily
+osv = 3600              # hourly (OSV publishes a fresh bulk ZIP hourly)
+ghsa = 1800             # 30 min
+rustsec = 3600
+pypa = 3600
+
+[outputs.vault]
+enabled = true
+path = "/home/phill/Documents/loacal-vault/Projects/CKB Advisory Watch/reports"
+
+[outputs.website]
+enabled = false
+# Where to rsync generated /advisories pages on wyltekindustries.com
+rsync_target = ""
+
+[outputs.telegram]
+enabled = false
+bot_token = ""
+chat_id = ""
+# Only post for advisories at or above this CVSS severity.
+# one of: low, medium, high, critical
+min_severity = "medium"

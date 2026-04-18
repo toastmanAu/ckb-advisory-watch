@@ -1,0 +1,19 @@
+[Unit]
+Description=CKB Advisory Watch agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ckb-advisory-watch
+ExecStart=%h/ckb-advisory-watch/.venv/bin/python -m agent.main --config %h/ckb-advisory-watch/config.toml
+Restart=on-failure
+RestartSec=30s
+
+# Soft resource caps — the Zero 3 has 3.8 GiB and runs a desktop.
+MemoryHigh=512M
+MemoryMax=1G
+CPUQuota=80%
+
+[Install]
+WantedBy=default.target
