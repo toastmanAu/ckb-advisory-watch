@@ -42,3 +42,36 @@ def upsert_project(
     project_id = cur.fetchone()[0]
     conn.commit()
     return project_id
+
+
+def upsert_project_dep(
+    conn: sqlite3.Connection,
+    *,
+    project_id: int,
+    ecosystem: str,
+    name: str,
+    version: str,
+    source_sha: str,
+    is_direct: bool = False,
+) -> None:
+    """Insert or refresh a project_dep row.
+
+    The UNIQUE constraint is (project_id, ecosystem, name, version, source_sha)
+    so a new SHA for the same dep creates a new row — audit trail of when a
+    dep was observed. last_seen is updated on conflict so re-running a walk
+    at the same SHA is a no-op. Caller owns the transaction."""
+    now = int(time.time())
+    conn.execute(
+        """
+        INSERT INTO project_dep (
+            project_id, ecosystem, name, version, is_direct,
+            source_sha, first_seen, last_seen
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(project_id, ecosystem, name, version, source_sha) DO UPDATE SET
+            last_seen = excluded.last_seen,
+            is_direct = excluded.is_direct
+        """,
+        (project_id, ecosystem, name, version, 1 if is_direct else 0,
+         source_sha, now, now),
+    )

@@ -26,6 +26,7 @@ except ModuleNotFoundError:
 
 from agent.db import open_db
 from agent.sources.osv import DEFAULT_ECOSYSTEMS, ingest_all
+from agent.walker import walk_all
 
 log = logging.getLogger("ckb-advisory-watch")
 
@@ -59,12 +60,41 @@ async def osv_poll_loop(
             continue
 
 
+async def github_poll_loop(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    interval: float,
+    stop: asyncio.Event,
+) -> None:
+    """Walk every seeded project's lockfiles into project_dep. Runs less
+    often than OSV (default daily) — projects mostly don't change hourly,
+    and the SHA-cache in walk_project short-circuits unchanged repos."""
+    while not stop.is_set():
+        log.info("github poll: walking lockfiles")
+        results = await walk_all(client, conn)
+        failed = [s for s, r in results.items() if isinstance(r, Exception)]
+        changed = sum(1 for r in results.values() if isinstance(r, int) and r > 0)
+        log.info(
+            "github poll: %d projects, %d updated, %d failed",
+            len(results), changed, len(failed),
+        )
+        for slug in failed:
+            log.warning("github.%s: %r", slug, results[slug])
+
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
 async def run(config: dict, schema_path: Path) -> None:
     data_dir = Path(config.get("agent", {}).get("data_dir", "data"))
     ecosystems = list(
         config.get("osv", {}).get("ecosystems", DEFAULT_ECOSYSTEMS)
     )
-    interval = float(config.get("poll", {}).get("osv", 3600))
+    osv_interval = float(config.get("poll", {}).get("osv", 3600))
+    github_interval = float(config.get("poll", {}).get("github_repos", 86400))
+    github_token = (config.get("github", {}) or {}).get("token") or ""
 
     conn = open_db(data_dir / "state.db", schema_path)
     stop = asyncio.Event()
@@ -73,16 +103,29 @@ async def run(config: dict, schema_path: Path) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
+    ua = "ckb-advisory-watch/0 (+https://github.com/toastmanAu/ckb-advisory-watch)"
+    github_headers: dict[str, str] = {
+        "user-agent": ua,
+        "accept": "application/vnd.github+json",
+    }
+    if github_token:
+        github_headers["authorization"] = f"Bearer {github_token}"
+    else:
+        log.warning("no github token configured — 60 req/hour rate limit applies")
+
     log.info(
-        "ckb-advisory-watch starting — %d ecosystems, %s poll interval",
-        len(ecosystems),
-        f"{interval:.0f}s",
+        "ckb-advisory-watch starting — osv=%ds, github=%ds, ecosystems=%d",
+        int(osv_interval), int(github_interval), len(ecosystems),
     )
-    async with httpx.AsyncClient(
-        headers={"user-agent": "ckb-advisory-watch/0 (+https://github.com/toastmanAu/ckb-advisory-watch)"}
-    ) as client:
+    async with (
+        httpx.AsyncClient(headers={"user-agent": ua}) as osv_client,
+        httpx.AsyncClient(headers=github_headers) as gh_client,
+    ):
         try:
-            await osv_poll_loop(conn, client, ecosystems, interval, stop)
+            await asyncio.gather(
+                osv_poll_loop(conn, osv_client, ecosystems, osv_interval, stop),
+                github_poll_loop(conn, gh_client, github_interval, stop),
+            )
         finally:
             log.info("ckb-advisory-watch stopped")
             conn.close()
