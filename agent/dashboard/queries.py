@@ -12,8 +12,9 @@ visibility rules.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 SEVERITY_ORDER_CASE = (
@@ -150,4 +151,152 @@ def landing_data(
         top_advisories=_top_advisories(conn, advisories_limit),
         last_osv_ingest=last_osv,
         last_github_walk=last_walk,
+    )
+
+
+@dataclass(frozen=True)
+class ProjectContext:
+    project_id: int
+    slug: str
+    display_name: str
+    repo_url: str
+    default_branch: str
+    last_sha: str | None
+    last_checked: int | None
+    matches: list[MatchRow]
+
+
+@dataclass(frozen=True)
+class AdvisoryContext:
+    advisory_id: int
+    source_id: str
+    severity: str | None
+    cvss: float | None
+    summary: str
+    details: str
+    modified: int | None
+    cve_ids: list[str] = field(default_factory=list)
+    references: list[dict] = field(default_factory=list)
+    fixed_in: str | None = None
+    matches: list[MatchRow] = field(default_factory=list)
+
+
+def project_context(
+    conn: sqlite3.Connection,
+    slug: str,
+    *,
+    severity_filter: set[str] | None = None,
+    ecosystem_filter: set[str] | None = None,
+) -> ProjectContext | None:
+    row = conn.execute(
+        """
+        SELECT id, slug, display_name, repo_url, default_branch, last_sha, last_checked
+        FROM project WHERE slug = ?
+        """,
+        (slug,),
+    ).fetchone()
+    if not row:
+        return None
+    pid, slug, display, repo_url, branch, last_sha, last_checked = row
+
+    where = ["m.state = 'open'", "m.project_id = ?"]
+    params: list = [pid]
+    if severity_filter:
+        placeholders = ",".join("?" for _ in severity_filter)
+        where.append(f"COALESCE(a.severity,'unknown') IN ({placeholders})")
+        params.extend(sorted(severity_filter))
+    if ecosystem_filter:
+        placeholders = ",".join("?" for _ in ecosystem_filter)
+        where.append(f"pd.ecosystem IN ({placeholders})")
+        params.extend(sorted(ecosystem_filter))
+
+    match_rows = conn.execute(
+        f"""
+        SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
+               p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
+               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
+                  FROM advisory_affects aa
+                  WHERE aa.advisory_id = a.id
+                    AND aa.ecosystem = pd.ecosystem
+                    AND aa.name = pd.name
+                    AND aa.fixed_in IS NOT NULL),
+               m.first_matched
+        FROM match m
+        JOIN advisory a ON a.id = m.advisory_id
+        JOIN project p ON p.id = m.project_id
+        JOIN project_dep pd ON pd.id = m.project_dep_id
+        WHERE {' AND '.join(where)}
+        ORDER BY {SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC
+        """,
+        tuple(params),
+    ).fetchall()
+
+    return ProjectContext(
+        project_id=pid,
+        slug=slug,
+        display_name=display,
+        repo_url=repo_url,
+        default_branch=branch,
+        last_sha=last_sha,
+        last_checked=last_checked,
+        matches=[MatchRow(*r) for r in match_rows],
+    )
+
+
+def advisory_context(
+    conn: sqlite3.Connection,
+    source_id: str,
+) -> AdvisoryContext | None:
+    row = conn.execute(
+        """
+        SELECT id, source_id, severity, cvss, summary, details, modified,
+               cve_ids, references_json
+        FROM advisory WHERE source_id = ?
+        """,
+        (source_id,),
+    ).fetchone()
+    if not row:
+        return None
+    aid, sid, sev, cvss, summary, details, modified, cve_json, refs_json = row
+
+    # first fixed_in we see for this advisory (intentionally broad — any package)
+    fixed_row = conn.execute(
+        "SELECT fixed_in FROM advisory_affects WHERE advisory_id = ? AND fixed_in IS NOT NULL LIMIT 1",
+        (aid,),
+    ).fetchone()
+    fixed_in = fixed_row[0] if fixed_row else None
+
+    match_rows = conn.execute(
+        f"""
+        SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
+               p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
+               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
+                  FROM advisory_affects aa
+                  WHERE aa.advisory_id = a.id
+                    AND aa.ecosystem = pd.ecosystem
+                    AND aa.name = pd.name
+                    AND aa.fixed_in IS NOT NULL),
+               m.first_matched
+        FROM match m
+        JOIN advisory a ON a.id = m.advisory_id
+        JOIN project p ON p.id = m.project_id
+        JOIN project_dep pd ON pd.id = m.project_dep_id
+        WHERE m.state = 'open' AND a.id = ?
+        ORDER BY p.slug ASC
+        """,
+        (aid,),
+    ).fetchall()
+
+    return AdvisoryContext(
+        advisory_id=aid,
+        source_id=sid,
+        severity=sev,
+        cvss=cvss,
+        summary=summary or "",
+        details=details or "",
+        modified=modified,
+        cve_ids=json.loads(cve_json) if cve_json else [],
+        references=json.loads(refs_json) if refs_json else [],
+        fixed_in=fixed_in,
+        matches=[MatchRow(*r) for r in match_rows],
     )

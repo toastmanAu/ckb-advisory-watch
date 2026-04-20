@@ -34,9 +34,16 @@ def seed_match(
     """Seed one project + one advisory + one matching dep. Returns
     (project_id, advisory_id, match_id). The matcher is NOT run — we insert
     the match row directly to keep tests focused on queries."""
+    # If display_name is not explicitly given and the project already exists,
+    # preserve the existing display_name rather than overwriting with the slug.
+    if display_name is None:
+        existing = conn.execute(
+            "SELECT display_name FROM project WHERE slug = ?", (project_slug,)
+        ).fetchone()
+        display_name = existing[0] if existing else project_slug
     pid = upsert_project(
         conn, slug=project_slug,
-        display_name=display_name or project_slug,
+        display_name=display_name,
         repo_url=f"https://github.com/{project_slug}",
     )
     conn.execute(

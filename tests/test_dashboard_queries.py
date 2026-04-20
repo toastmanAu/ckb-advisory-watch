@@ -4,6 +4,9 @@ from __future__ import annotations
 import time
 
 from agent.dashboard.queries import landing_data, LandingData
+from agent.dashboard.queries import (
+    project_context, advisory_context, ProjectContext, AdvisoryContext,
+)
 from tests.dashboard_fixtures import fresh_db, seed_match
 
 
@@ -79,3 +82,57 @@ def test_landing_data_top_projects_and_advisories(tmp_path):
     assert slug_to_count["quiet/project"] == 1
     # GHSA-a-0 hits two projects -> #1 top advisory
     assert data.top_advisories[0] == ("GHSA-a-0", 2)
+
+
+def test_project_context_returns_project_and_matches(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="x/y", display_name="X/Y", source_id="GHSA-1")
+    seed_match(conn, project_slug="x/y", source_id="GHSA-2", dep_name="pkg2")
+    seed_match(conn, project_slug="other/one", source_id="GHSA-3")
+
+    ctx = project_context(conn, "x/y")
+    assert ctx is not None
+    assert ctx.slug == "x/y"
+    assert ctx.display_name == "X/Y"
+    assert ctx.last_sha == "abc123"
+    assert len(ctx.matches) == 2
+    assert {m.source_id for m in ctx.matches} == {"GHSA-1", "GHSA-2"}
+
+
+def test_project_context_returns_none_for_unknown_slug(tmp_path):
+    conn = fresh_db(tmp_path)
+    assert project_context(conn, "nonexistent/repo") is None
+
+
+def test_project_context_filters_by_severity_param(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="x/y", source_id="GHSA-c", severity="critical", cvss=9.8)
+    seed_match(conn, project_slug="x/y", source_id="GHSA-l", severity="low", cvss=3.0, dep_name="p2")
+    ctx = project_context(conn, "x/y", severity_filter={"critical"})
+    assert len(ctx.matches) == 1
+    assert ctx.matches[0].source_id == "GHSA-c"
+
+
+def test_advisory_context_returns_advisory_and_affected(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="a/one", source_id="GHSA-shared", dep_name="lib", dep_version="1.0.0")
+    seed_match(conn, project_slug="a/two", source_id="GHSA-shared", dep_name="lib", dep_version="1.0.0")
+    ctx = advisory_context(conn, "GHSA-shared")
+    assert ctx is not None
+    assert ctx.source_id == "GHSA-shared"
+    assert ctx.severity == "high"
+    assert len(ctx.matches) == 2
+    slugs = sorted(m.project_slug for m in ctx.matches)
+    assert slugs == ["a/one", "a/two"]
+
+
+def test_advisory_context_returns_none_for_unknown_id(tmp_path):
+    conn = fresh_db(tmp_path)
+    assert advisory_context(conn, "GHSA-not-real") is None
+
+
+def test_advisory_context_includes_references(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, source_id="GHSA-refs")
+    ctx = advisory_context(conn, "GHSA-refs")
+    assert any("example.com" in ref["url"] for ref in ctx.references)
