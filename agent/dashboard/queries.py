@@ -13,7 +13,7 @@ visibility rules.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field  # `field` is used by later additions (ProjectContext, AdvisoryContext)
+from dataclasses import dataclass
 
 
 SEVERITY_ORDER_CASE = (
@@ -74,9 +74,12 @@ def _triage(conn: sqlite3.Connection, limit: int) -> list[MatchRow]:
         f"""
         SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
                p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
-               (SELECT aa.fixed_in FROM advisory_affects aa
-                  WHERE aa.advisory_id = a.id AND aa.name = pd.name
-                  LIMIT 1) AS fixed_in,
+               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
+                  FROM advisory_affects aa
+                  WHERE aa.advisory_id = a.id
+                    AND aa.ecosystem = pd.ecosystem
+                    AND aa.name = pd.name
+                    AND aa.fixed_in IS NOT NULL) AS fixed_in,
                m.first_matched
         FROM match m
         JOIN advisory a ON a.id = m.advisory_id
@@ -126,9 +129,9 @@ def _last_timestamps(conn: sqlite3.Connection) -> tuple[int | None, int | None]:
     row = conn.execute(
         "SELECT MAX(updated_at) FROM poller_state WHERE key LIKE 'osv.etag.%'"
     ).fetchone()
-    last_osv = row[0] if row else None
+    last_osv = row[0]
     row = conn.execute("SELECT MAX(last_checked) FROM project").fetchone()
-    last_walk = row[0] if row else None
+    last_walk = row[0]
     return last_osv, last_walk
 
 

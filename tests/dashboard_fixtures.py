@@ -49,8 +49,8 @@ def seed_match(
             version=dep_version, source_sha=source_sha,
         )
     (dep_id,) = conn.execute(
-        "SELECT id FROM project_dep WHERE project_id=? AND name=? AND version=?",
-        (pid, dep_name, dep_version),
+        "SELECT id FROM project_dep WHERE project_id=? AND ecosystem=? AND name=? AND version=?",
+        (pid, ecosystem, dep_name, dep_version),
     ).fetchone()
 
     raw = {
@@ -71,6 +71,9 @@ def seed_match(
         raw["severity"] = [{"type": "CVSS_V3", "score": f"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L"}]
     with conn:
         aid = upsert_advisory(conn, raw)
+    if cvss is not None:
+        conn.execute("UPDATE advisory SET cvss = ? WHERE id = ?", (cvss, aid))
+        conn.commit()
 
     now = int(time.time())
     cur = conn.execute(

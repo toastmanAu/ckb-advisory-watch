@@ -7,6 +7,26 @@ from agent.dashboard.queries import landing_data, LandingData
 from tests.dashboard_fixtures import fresh_db, seed_match
 
 
+def test_landing_data_last_timestamps(tmp_path):
+    conn = fresh_db(tmp_path)
+    osv_ts = 1_700_000_000
+    walk_ts = 1_700_001_000
+    conn.execute(
+        "INSERT INTO poller_state (key, value, updated_at) VALUES (?, ?, ?)",
+        ("osv.etag.crates.io", "etag-abc", osv_ts),
+    )
+    conn.commit()
+    # seed a project with a known last_checked
+    from agent.db import upsert_project
+    pid = upsert_project(conn, slug="ts/test", display_name="ts/test", repo_url="https://github.com/ts/test")
+    conn.execute("UPDATE project SET last_checked = ? WHERE id = ?", (walk_ts, pid))
+    conn.commit()
+
+    data = landing_data(conn)
+    assert data.last_osv_ingest == osv_ts
+    assert data.last_github_walk == walk_ts
+
+
 def test_landing_data_empty_db(tmp_path):
     conn = fresh_db(tmp_path)
     data = landing_data(conn)
