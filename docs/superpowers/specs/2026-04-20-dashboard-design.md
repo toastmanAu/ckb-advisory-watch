@@ -175,10 +175,11 @@ Same top strip + KPI strip as landing. Main area replaced with:
 
 - Project header: full slug, display_name, last walked timestamp, link to
   GitHub repo, link to current source_sha
-- Single share button: "📤 share this project's exposure to inbox"
 - Full matches table for that project (same columns as triage, no severity
-  filter — show all severities). Filter widget row above: `[severity ▾] [ecosystem ▾]`
-  that are `<form GET>` with URL params
+  filter — show all severities). Share actions are per-row (per-match) and
+  per-advisory via click-through — no project-wide share button in v0.
+  Filter widget row above: `[severity ▾] [ecosystem ▾]` that are
+  `<form GET>` with URL params
 
 URL params: `?severity=critical,high`, `?ecosystem=crates.io`. Multi-select
 as comma-separated values. Empty = all.
