@@ -1,0 +1,15 @@
+{{ sev_emoji }} <b>{{ sev_label|upper|e }}</b>{% if advisory.cvss %} · CVSS {{ "%.1f"|format(advisory.cvss) }}{% endif %}
+<b>{{ advisory.source_id|e }}</b>
+
+<i>{{ summary_truncated|e }}</i>
+
+Affects <b>{{ matches|length }}</b> project(s) in your stack:
+{% for m in matches[:max_matches] -%}
+• {{ m.project_slug|e }} — <code>{{ m.dep_name|e }}@{{ m.dep_version|e }}</code>
+{% endfor -%}
+{% if matches|length > max_matches -%}
+… and <b>{{ matches|length - max_matches }} more</b> (see dashboard)
+{% endif -%}
+{% if advisory.fixed_in %}
+Fix: upgrade to <code>{{ advisory.fixed_in|e }}</code>
+{% endif %}
