@@ -1,0 +1,23 @@
+{% if kind == 'advisory' -%}
+Severity: {{ (advisory.severity or 'unknown')|upper }}{% if advisory.cvss %} · CVSS {{ '%.1f'|format(advisory.cvss) }}{% endif %}
+
+Summary: {{ advisory.summary }}
+
+Affects {{ advisory.matches|length }} project(s) in tracked stack:
+{% for m in advisory.matches -%}
+  - {{ m.project_slug }} — {{ m.dep_name }}@{{ m.dep_version }}
+{% endfor %}
+{% if advisory.fixed_in -%}
+Fix: upgrade to {{ advisory.matches[0].dep_name if advisory.matches else 'package' }} >= {{ advisory.fixed_in }}
+{% endif %}
+Dashboard: {{ dashboard_url }}
+{% else -%}
+Severity: {{ (advisory.severity or 'unknown')|upper }}{% if advisory.cvss %} · CVSS {{ '%.1f'|format(advisory.cvss) }}{% endif %}
+
+Summary: {{ advisory.summary }}
+
+Affects: {{ match.project_slug }} — {{ match.dep_name }}@{{ match.dep_version }}
+{% if match.fixed_in %}Fix: upgrade to {{ match.dep_name }} >= {{ match.fixed_in }}{% endif %}
+
+Dashboard: {{ dashboard_url }}
+{% endif %}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html><body style="font-family:Arial,sans-serif;color:#202124;font-size:13px;line-height:1.55">
+<p><strong>Severity:</strong> {{ (advisory.severity or 'unknown')|upper }}{% if advisory.cvss %} · CVSS {{ '%.1f'|format(advisory.cvss) }}{% endif %}</p>
+<p><strong>Summary:</strong> {{ advisory.summary }}</p>
+{% if kind == 'advisory' %}
+<p><strong>Affects {{ advisory.matches|length }} project(s) in tracked stack:</strong></p>
+<ul>
+{% for m in advisory.matches %}
+  <li>{{ m.project_slug }} — <code>{{ m.dep_name }}@{{ m.dep_version }}</code></li>
+{% endfor %}
+</ul>
+{% if advisory.fixed_in %}<p><strong>Fix:</strong> upgrade to <code>{{ advisory.fixed_in }}</code></p>{% endif %}
+{% else %}
+<p><strong>Affects:</strong> {{ match.project_slug }} — <code>{{ match.dep_name }}@{{ match.dep_version }}</code></p>
+{% if match.fixed_in %}<p><strong>Fix:</strong> upgrade to <code>{{ match.fixed_in }}</code></p>{% endif %}
+{% endif %}
+<p><strong>Dashboard:</strong> <a href="{{ dashboard_url }}">{{ dashboard_url }}</a></p>
+<p style="color:#5f6368;font-size:11px;border-top:1px solid #e8eaed;padding-top:10px">Reported by ckb-advisory-watch</p>
+</body></html>
