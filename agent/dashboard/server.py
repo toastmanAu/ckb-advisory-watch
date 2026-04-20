@@ -87,6 +87,42 @@ async def index_view(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def project_view(request: web.Request) -> web.Response:
+    slug = f"{request.match_info['owner']}/{request.match_info['repo']}"
+    conn = request.app["conn_factory"]()
+    try:
+        data = queries.landing_data(conn)
+        severity_filter = _parse_csv_set(request.query.get("severity"))
+        ecosystem_filter = _parse_csv_set(request.query.get("ecosystem"))
+        ctx = queries.project_context(
+            conn, slug,
+            severity_filter=severity_filter,
+            ecosystem_filter=ecosystem_filter,
+        )
+    finally:
+        conn.close()
+    if ctx is None:
+        return web.Response(status=404, text=f"project not found: {slug}")
+
+    template = request.app["jinja"].get_template("project.html")
+    html = template.render(
+        kpis=data.kpis,
+        hostname=request.app["hostname"],
+        last_osv_ingest_label=_ago(data.last_osv_ingest),
+        last_walk_label=_ago(data.last_github_walk),
+        flash=_flash_from_query(request),
+        project=ctx,
+        active_severity_filter=",".join(sorted(severity_filter)) if severity_filter else "",
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
+def _parse_csv_set(s: str | None) -> set[str] | None:
+    if not s:
+        return None
+    return {v.strip() for v in s.split(",") if v.strip()}
+
+
 def build_app(
     *,
     conn_factory: Callable[[], sqlite3.Connection],
@@ -100,5 +136,6 @@ def build_app(
     app["jinja"] = _make_env()
 
     app.router.add_get("/", index_view)
+    app.router.add_get(r"/p/{owner:[^/]+}/{repo:[^/]+}", project_view)
     app.router.add_static("/static/", STATIC_DIR, follow_symlinks=False)
     return app

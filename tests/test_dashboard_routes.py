@@ -64,3 +64,38 @@ async def test_favicon_served(tmp_path, share_config):
         resp = await client.get("/static/favicon.png")
         assert resp.status == 200
         assert resp.headers["content-type"] == "image/png"
+
+
+async def test_project_page_shows_matches(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/p/a/b")
+        assert resp.status == 200
+        body = await resp.text()
+    assert "GHSA-crit" in body
+    assert "libgit2-sys" in body
+
+
+async def test_project_page_404_for_unknown(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/p/does/notexist")
+    assert resp.status == 404
+
+
+async def test_project_page_filters_by_severity_query_param(tmp_path, share_config):
+    # _client creates the DB + applies schema + seeds the GHSA-crit match.
+    # We add a second (low-severity) match after that, via a fresh connection
+    # to the same file, then exercise the filter.
+    async with await _client(tmp_path, share_config) as client:
+        import sqlite3
+        from tests.dashboard_fixtures import seed_match
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        seed_match(conn, project_slug="a/b", source_id="GHSA-low-extra",
+                   severity="low", cvss=3.0, dep_name="other-pkg")
+        conn.close()
+
+        r1 = await client.get("/p/a/b")
+        b1 = await r1.text()
+        r2 = await client.get("/p/a/b?severity=critical")
+        b2 = await r2.text()
+    assert "GHSA-crit" in b1 and "GHSA-low-extra" in b1
+    assert "GHSA-crit" in b2 and "GHSA-low-extra" not in b2

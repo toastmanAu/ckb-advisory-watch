@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ project.slug }} · ckb-advisory-watch{% endblock %}
+{% block content %}
+<div class="page">
+  <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:12px">
+    <h1 class="mono">{{ project.slug }}</h1>
+    <span class="mono" style="color:var(--text-dim);font-size:12px">{{ project.display_name }}</span>
+    <a class="mono" style="margin-left:auto" href="{{ project.repo_url }}">{{ project.repo_url }}</a>
+  </div>
+
+  <form method="GET" style="margin-bottom:10px;font:12px Inter">
+    <label>severity:
+      <select name="severity">
+        <option value="">all</option>
+        <option value="critical" {% if active_severity_filter == 'critical' %}selected{% endif %}>critical only</option>
+        <option value="critical,high" {% if active_severity_filter == 'critical,high' %}selected{% endif %}>critical + high</option>
+      </select>
+    </label>
+    <button type="submit" class="share sm">apply</button>
+    <span class="mono" style="margin-left:10px;color:var(--text-dim)">{{ project.matches|length }} matches</span>
+  </form>
+
+  <table class="data">
+    <thead><tr>
+      <th style="width:68px">sev</th>
+      <th class="num" style="width:50px">cvss</th>
+      <th>advisory</th>
+      <th>affected</th>
+      <th style="width:90px">fixed in</th>
+      <th style="width:56px;text-align:center">share</th>
+    </tr></thead>
+    <tbody>
+      {% for m in project.matches %}
+      <tr>
+        <td><span class="pill {{ m.severity or 'unknown' }}">{{ (m.severity or 'unk')[:4]|upper }}</span></td>
+        <td class="num" style="color:var(--text)">{% if m.cvss %}{{ '%.1f'|format(m.cvss) }}{% else %}—{% endif %}</td>
+        <td><a href="/a/{{ m.source_id }}">{{ m.source_id }}</a></td>
+        <td>{{ m.dep_name }}@{{ m.dep_version }}</td>
+        <td style="color:var(--sev-low)">{{ m.fixed_in or '—' }}</td>
+        <td style="text-align:center">
+          <form method="POST" action="/share/match/{{ m.match_id }}" style="margin:0">
+            <button type="submit" class="share sm">📤</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
