@@ -74,15 +74,33 @@ def _base_context(request: web.Request) -> dict:
     }
 
 
+_SEVERITY_LEVELS = ("critical", "high", "medium", "low", "unknown")
+
+
 async def index_view(request: web.Request) -> web.Response:
-    ctx = _base_context(request)
-    data = ctx.pop("_landing_data")
+    # KPI tiles toggle the triage filter via ?severity=<level>.
+    # Empty / unknown param reverts to the default (critical + high).
+    raw = request.query.get("severity")
+    active_sev = raw if raw in _SEVERITY_LEVELS else None
+    triage_severities = (active_sev,) if active_sev else queries.DEFAULT_TRIAGE_SEVERITIES
+
+    conn = request.app["conn_factory"]()
+    try:
+        data = queries.landing_data(conn, triage_severities=triage_severities)
+    finally:
+        conn.close()
+
     template = request.app["jinja"].get_template("index.html")
     html = template.render(
+        kpis=data.kpis,
+        hostname=request.app["hostname"],
+        last_osv_ingest_label=_ago(data.last_osv_ingest),
+        last_walk_label=_ago(data.last_github_walk),
+        flash=_flash_from_query(request),
         triage=data.triage,
         top_projects=data.top_projects,
         top_advisories=data.top_advisories,
-        **ctx,
+        active_sev=active_sev,  # template highlights the clicked tile
     )
     return web.Response(text=html, content_type="text/html")
 

@@ -101,11 +101,21 @@ def _kpis(conn: sqlite3.Connection) -> dict[str, int]:
     return out
 
 
-def _triage(conn: sqlite3.Connection, limit: int) -> list[MatchRow]:
+DEFAULT_TRIAGE_SEVERITIES: tuple[str, ...] = ("critical", "high")
+
+
+def _triage(
+    conn: sqlite3.Connection,
+    limit: int,
+    severities: tuple[str, ...] = DEFAULT_TRIAGE_SEVERITIES,
+) -> list[MatchRow]:
+    # COALESCE handles the 'unknown' case: advisories with NULL severity show
+    # up when the operator picks Unknown from the KPI tile filter.
+    placeholders = ",".join("?" for _ in severities)
     return _fetch_match_rows(
         conn,
-        where="m.state = 'open' AND a.severity IN ('critical', 'high')",
-        params=(),
+        where=f"m.state = 'open' AND COALESCE(a.severity, 'unknown') IN ({placeholders})",
+        params=tuple(severities),
         order_by=f"{SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC",
         limit=limit,
     )
@@ -155,13 +165,14 @@ def landing_data(
     conn: sqlite3.Connection,
     *,
     triage_limit: int = 12,
+    triage_severities: tuple[str, ...] = DEFAULT_TRIAGE_SEVERITIES,
     projects_limit: int = 8,
     advisories_limit: int = 6,
 ) -> LandingData:
     last_osv, last_walk = _last_timestamps(conn)
     return LandingData(
         kpis=_kpis(conn),
-        triage=_triage(conn, triage_limit),
+        triage=_triage(conn, triage_limit, triage_severities),
         top_projects=_top_projects(conn, projects_limit),
         top_advisories=_top_advisories(conn, advisories_limit),
         last_osv_ingest=last_osv,

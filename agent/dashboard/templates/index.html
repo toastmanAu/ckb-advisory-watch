@@ -4,8 +4,14 @@
 
   <section style="border-right:1px solid var(--border)">
     <div style="padding:10px 20px;background:var(--bg-alt);display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600;font-size:12px;letter-spacing:0.02em">OPEN MATCHES · CRITICAL + HIGH</span>
+      <span style="font-weight:600;font-size:12px;letter-spacing:0.02em">
+        OPEN MATCHES ·
+        {% if active_sev %}{{ active_sev|upper }}{% else %}CRITICAL + HIGH{% endif %}
+      </span>
       <span class="mono" style="font-size:11px;color:var(--text-dim)">showing {{ triage|length }}</span>
+      {% if active_sev %}
+      <a class="mono" href="/" style="margin-left:auto;font-size:11px">clear filter →</a>
+      {% endif %}
     </div>
     <table class="data">
       <thead><tr>

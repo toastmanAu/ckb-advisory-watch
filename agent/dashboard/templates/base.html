@@ -38,7 +38,7 @@
     .topstrip { padding: 14px 20px; border-bottom: 1px solid var(--border);
                 display: flex; align-items: center; gap: 12px; background: var(--bg-alt); }
     .topstrip .logo { width: 32px; height: 32px; border-radius: 6px;
-                      background: linear-gradient(135deg,#d84565,#4285ff); flex-shrink: 0; }
+                      object-fit: cover; flex-shrink: 0; display: block; }
     .topstrip .name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
     .topstrip .meta { font-family: "JetBrains Mono", monospace; font-size: 11px;
                       color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -63,6 +63,12 @@
     .kpi.low .n { color: #cff1d8; } .kpi.low .l { color: var(--sev-low); }
     .kpi.unknown { border-color: var(--sev-unk); background: var(--sev-unk-bg); }
     .kpi.unknown .n { color: #d8dfee; } .kpi.unknown .l { color: var(--sev-unk); }
+    /* KPI tiles are clickable filters; only the tile itself shows a ring/hover.
+       Anchor has no underline or color of its own. */
+    .kpi-link { display: block; text-decoration: none; color: inherit; }
+    .kpi-link:hover { text-decoration: none; }
+    .kpi-link:hover .kpi { filter: brightness(1.15); }
+    .kpi.active { outline: 2px solid var(--text); outline-offset: -2px; }
 
     /* ---- FLASH BANNER ---- */
     .flash { padding: 10px 20px; font: 12px "JetBrains Mono", monospace; }
@@ -105,7 +111,7 @@
 <body>
 
 <div class="topstrip">
-  <div class="logo"></div>
+  <img class="logo" src="/static/logo.png" alt="ckb-advisory-watch">
   <div>
     <div class="name">ckb-advisory-watch</div>
     <div class="meta">v0.4 · {{ hostname }} · <span style="color:#4dc67b">●</span> live</div>
@@ -117,11 +123,15 @@
 </div>
 
 <div class="kpis">
-  <div class="kpi critical"><div class="n">{{ kpis.critical }}</div><div class="l">critical</div></div>
-  <div class="kpi high"><div class="n">{{ kpis.high }}</div><div class="l">high</div></div>
-  <div class="kpi medium"><div class="n">{{ kpis.medium }}</div><div class="l">medium</div></div>
-  <div class="kpi low"><div class="n">{{ kpis.low }}</div><div class="l">low</div></div>
-  <div class="kpi unknown"><div class="n">{{ kpis.unknown }}</div><div class="l">unknown</div></div>
+  {% for level in ['critical','high','medium','low','unknown'] %}
+    {% set is_active = (active_sev|default(none)) == level %}
+    <a class="kpi-link" href="{% if is_active %}/{% else %}/?severity={{ level }}{% endif %}">
+      <div class="kpi {{ level }}{% if is_active %} active{% endif %}">
+        <div class="n">{{ kpis[level] }}</div>
+        <div class="l">{{ level }}</div>
+      </div>
+    </a>
+  {% endfor %}
 </div>
 
 {% if flash %}
