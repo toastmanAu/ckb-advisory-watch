@@ -224,3 +224,94 @@ async def send_message(
         raise PermanentSendError(f"api returned ok=false: {data.get('description', '<no desc>')}")
 
     return int(data["result"]["message_id"])
+
+
+import sqlite3  # noqa: E402 — stdlib, after async send block
+import time     # noqa: E402
+
+# CASE expression mapping severity strings to the numeric rank used by
+# SEVERITY_LEVEL. Shared by unemitted-query and baseline-query to guarantee
+# identical threshold semantics.
+_SEVERITY_CASE_SQL = (
+    "CASE COALESCE(a.severity, 'unknown') "
+    "WHEN 'critical' THEN 4 "
+    "WHEN 'high' THEN 3 "
+    "WHEN 'medium' THEN 2 "
+    "WHEN 'low' THEN 1 "
+    "ELSE 0 END"
+)
+
+
+def _unemitted_advisories_above(
+    conn: sqlite3.Connection,
+    sub_channel: str,
+    min_level: int,
+) -> list[tuple[int, str]]:
+    """Return [(advisory_id, source_id), ...] for advisories with >=1 open
+    match at or above `min_level` that has not yet been emitted on
+    `sub_channel`. Ordered newest-advisory-first (by advisory.modified)."""
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT m.advisory_id, a.source_id
+        FROM match m
+        JOIN advisory a ON a.id = m.advisory_id
+        LEFT JOIN emission e
+          ON e.match_id = m.id AND e.channel = ?
+        WHERE e.id IS NULL
+          AND m.state = 'open'
+          AND {_SEVERITY_CASE_SQL} >= ?
+        ORDER BY COALESCE(a.modified, 0) DESC, a.source_id ASC
+        """,
+        (sub_channel, min_level),
+    ).fetchall()
+    return [(int(r[0]), str(r[1])) for r in rows]
+
+
+def _baseline_state_key(sub_channel: str) -> str:
+    return f"telegram.baseline_done.{sub_channel}"
+
+
+def baseline_if_first_run(
+    conn: sqlite3.Connection,
+    sub_channel: str,
+    min_level: int,
+) -> int:
+    """On first call per `sub_channel`, insert `emission` rows for all open
+    matches at or above `min_level` without actually sending. Returns the
+    number of emission rows inserted (0 on subsequent calls).
+
+    Idempotent via poller_state key `telegram.baseline_done.<sub_channel>`.
+    """
+    key = _baseline_state_key(sub_channel)
+    existing = conn.execute(
+        "SELECT 1 FROM poller_state WHERE key = ?", (key,),
+    ).fetchone()
+    if existing:
+        return 0
+
+    now = int(time.time())
+    with conn:
+        cur = conn.execute(
+            f"""
+            INSERT INTO emission (match_id, channel, emitted_at, artifact_path)
+            SELECT m.id, ?, ?, 'baseline'
+            FROM match m
+            JOIN advisory a ON a.id = m.advisory_id
+            LEFT JOIN emission e
+              ON e.match_id = m.id AND e.channel = ?
+            WHERE e.id IS NULL
+              AND m.state = 'open'
+              AND {_SEVERITY_CASE_SQL} >= ?
+            """,
+            (sub_channel, now, sub_channel, min_level),
+        )
+        inserted = cur.rowcount
+        conn.execute(
+            """
+            INSERT INTO poller_state (key, value, updated_at)
+            VALUES (?, '1', ?)
+            ON CONFLICT(key) DO UPDATE SET value='1', updated_at=excluded.updated_at
+            """,
+            (key, now),
+        )
+    return inserted
