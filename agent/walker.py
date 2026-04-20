@@ -33,10 +33,12 @@ log = logging.getLogger(__name__)
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW = "https://raw.githubusercontent.com"
 
-# Map basename -> (ecosystem tag stored in project_dep, parser function).
-# Basename dispatch handles monorepo paths like packages/foo/Cargo.lock.
+# Map basename -> (OSV ecosystem tag, parser function).
+# Tags MUST match what OSV uses in advisory_affects.ecosystem so the
+# matcher's JOIN is trivial. Basename dispatch handles monorepo paths
+# like crates/foo/Cargo.lock naturally.
 LOCKFILE_PARSERS: dict[str, tuple[str, Callable[[str], list[tuple[str, str]]]]] = {
-    "Cargo.lock": ("cargo", parse_cargo_lock),
+    "Cargo.lock": ("crates.io", parse_cargo_lock),
     "package-lock.json": ("npm", parse_package_lock),
     "go.sum": ("Go", parse_go_sum),
 }
@@ -44,13 +46,31 @@ LOCKFILE_PARSERS: dict[str, tuple[str, Callable[[str], list[tuple[str, str]]]]] 
 
 async def _tip_sha(
     client: httpx.AsyncClient, slug: str, branch: str
-) -> str:
+) -> tuple[str, str]:
+    """Return (actual_branch, tip_sha).
+
+    Falls back to repo metadata when the stored branch 404s — the seed
+    defaulted everything to `main`, but many CKB repos use `master` or
+    `develop`. This keeps the seed maintenance-free and self-correcting."""
     r = await client.get(
         f"{GITHUB_API}/repos/{slug}/commits/{branch}",
         timeout=30.0,
     )
+    # 404 = repo missing / private; 422 = repo exists but branch doesn't.
+    # Both are worth a metadata retry before giving up.
+    if r.status_code in (404, 422):
+        meta = await client.get(f"{GITHUB_API}/repos/{slug}", timeout=30.0)
+        meta.raise_for_status()
+        real_branch = meta.json()["default_branch"]
+        if real_branch == branch:
+            r.raise_for_status()  # same branch as tried — re-raise original
+        r = await client.get(
+            f"{GITHUB_API}/repos/{slug}/commits/{real_branch}", timeout=30.0,
+        )
+        r.raise_for_status()
+        return real_branch, r.json()["sha"]
     r.raise_for_status()
-    return r.json()["sha"]
+    return branch, r.json()["sha"]
 
 
 async def _list_tree(
@@ -109,24 +129,43 @@ async def walk_project(
     last_sha: str | None,
 ) -> int:
     """Walk one project. Returns the number of (ecosystem, name, version)
-    rows written. Zero means either unchanged or no recognized lockfiles."""
-    new_sha = await _tip_sha(client, slug, default_branch)
+    rows written. Zero means either unchanged or no recognized lockfiles.
+
+    All network I/O happens before the DB transaction opens — asyncio could
+    otherwise yield to another coroutine mid-transaction, accidentally
+    bundling writes from different work units into the same COMMIT and
+    rolling them back together on one side's error."""
+    actual_branch, new_sha = await _tip_sha(client, slug, default_branch)
     if new_sha == last_sha:
+        if actual_branch != default_branch:
+            # Discovered a branch rename — write back so subsequent walks
+            # skip the fallback round-trip.
+            with conn:
+                conn.execute(
+                    "UPDATE project SET default_branch = ? WHERE id = ?",
+                    (actual_branch, project_id),
+                )
         return 0
 
     paths = await _list_tree(client, slug, new_sha)
     lockfiles = _find_lockfiles(paths)
 
+    # Fetch + parse every lockfile first (network-bound), so the transaction
+    # window only holds SQLite writes.
+    parsed: list[tuple[str, list[tuple[str, str]]]] = []
+    for path, basename in lockfiles:
+        ecosystem, parser = LOCKFILE_PARSERS[basename]
+        try:
+            body = await _fetch_file(client, slug, new_sha, path)
+            deps = parser(body)
+        except Exception as exc:
+            log.warning("%s: parse failed for %s: %r", slug, path, exc)
+            continue
+        parsed.append((ecosystem, deps))
+
     total = 0
     with conn:
-        for path, basename in lockfiles:
-            ecosystem, parser = LOCKFILE_PARSERS[basename]
-            try:
-                body = await _fetch_file(client, slug, new_sha, path)
-                deps = parser(body)
-            except Exception as exc:
-                log.warning("%s: parse failed for %s: %r", slug, path, exc)
-                continue
+        for ecosystem, deps in parsed:
             for name, version in deps:
                 upsert_project_dep(
                     conn,
@@ -138,8 +177,9 @@ async def walk_project(
                 )
                 total += 1
         conn.execute(
-            "UPDATE project SET last_sha = ?, last_checked = ? WHERE id = ?",
-            (new_sha, int(time.time()), project_id),
+            "UPDATE project SET last_sha = ?, last_checked = ?, default_branch = ? "
+            "WHERE id = ?",
+            (new_sha, int(time.time()), actual_branch, project_id),
         )
 
     return total

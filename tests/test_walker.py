@@ -71,7 +71,7 @@ async def test_walk_project_populates_deps_from_cargo_lock(db: sqlite3.Connectio
         "SELECT ecosystem, name, version FROM project_dep WHERE project_id = ?",
         (pid,),
     ).fetchall()
-    assert ("cargo", "serde", "1.0.217") in rows
+    assert ("crates.io", "serde", "1.0.217") in rows
     # And project.last_sha was updated
     (last_sha,) = db.execute(
         "SELECT last_sha FROM project WHERE id = ?", (pid,)
@@ -131,7 +131,7 @@ async def test_walk_project_handles_multi_ecosystem_repo(db: sqlite3.Connection)
             (pid,),
         )
     }
-    assert ecosystems == {"cargo", "npm", "Go"}
+    assert ecosystems == {"crates.io", "npm", "Go"}
 
 
 @pytest.mark.asyncio
@@ -198,3 +198,33 @@ async def test_walk_sends_auth_header_when_token_configured(db: sqlite3.Connecti
             await walk_project(client, db, pid, "x/y", "main", None)
 
     assert captured[0].headers["authorization"] == "Bearer ghp_testtoken"
+
+
+@pytest.mark.parametrize("fail_status", [404, 422])
+@pytest.mark.asyncio
+async def test_walk_falls_back_to_repo_default_branch(db: sqlite3.Connection, fail_status: int):
+    """Seeded default_branch="main" for a repo whose real default is "master".
+    First commit call returns 404 (repo truly missing) or 422 (repo exists,
+    branch name invalid) — GitHub uses 422 for non-existent branches, which
+    the fallback must also recognize. Walker queries repo metadata, retries
+    against the real branch, and persists the correction."""
+    pid = upsert_project(db, slug="x/masterrepo", display_name="M", repo_url="u")
+
+    with respx.mock() as mock:
+        mock.get(f"{GITHUB_API}/repos/x/masterrepo/commits/main").mock(
+            return_value=httpx.Response(fail_status, json={"message": "bad branch"})
+        )
+        mock.get(f"{GITHUB_API}/repos/x/masterrepo").mock(
+            return_value=httpx.Response(200, json={"default_branch": "master"})
+        )
+        mock.get(f"{GITHUB_API}/repos/x/masterrepo/commits/master").mock(
+            return_value=httpx.Response(200, json={"sha": "ms1"})
+        )
+        _mock_tree(mock, "x/masterrepo", "ms1", [])
+        async with httpx.AsyncClient() as client:
+            await walk_project(client, db, pid, "x/masterrepo", "main", None)
+
+    (branch,) = db.execute(
+        "SELECT default_branch FROM project WHERE id = ?", (pid,),
+    ).fetchone()
+    assert branch == "master"

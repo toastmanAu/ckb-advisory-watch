@@ -56,7 +56,7 @@ projects:
     display_name: Lumos (dapp framework)
   - slug: ckb-js/ckb-sdk-js
     display_name: CKB SDK (JS)
-  - slug: ckb-js/ckb-js-vm
+  - slug: nervosnetwork/ckb-js-vm
     display_name: CKB-JS-VM
   - slug: ckb-js/ckit
     display_name: ckit (apps toolkit)

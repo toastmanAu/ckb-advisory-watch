@@ -25,6 +25,7 @@ except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
 from agent.db import open_db
+from agent.matcher import run_matcher
 from agent.sources.osv import DEFAULT_ECOSYSTEMS, ingest_all
 from agent.walker import walk_all
 
@@ -48,11 +49,18 @@ async def osv_poll_loop(
     while not stop.is_set():
         log.info("osv poll: starting run across %d ecosystems", len(ecosystems))
         results = await ingest_all(conn, client, ecosystems)
+        changed = False
         for eco, outcome in results.items():
             if isinstance(outcome, Exception):
                 log.error("osv.%s: FAILED %r", eco, outcome)
             else:
                 log.info("osv.%s: %d advisories", eco, outcome)
+                if outcome > 0:
+                    changed = True
+
+        if changed:
+            new_matches = run_matcher(conn)
+            log.info("matcher: %d new matches after osv ingest", new_matches)
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
@@ -80,6 +88,10 @@ async def github_poll_loop(
         )
         for slug in failed:
             log.warning("github.%s: %r", slug, results[slug])
+
+        if changed > 0:
+            new_matches = run_matcher(conn)
+            log.info("matcher: %d new matches after github walk", new_matches)
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
