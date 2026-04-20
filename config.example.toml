@@ -41,3 +41,24 @@ chat_id = ""
 # Only post for advisories at or above this CVSS severity.
 # one of: low, medium, high, critical
 min_severity = "medium"
+
+[dashboard]
+# Bind host and port for the browser dashboard. 0.0.0.0 makes it reachable
+# from other machines on the LAN.
+host = "0.0.0.0"
+port = 8080
+# Absolute URL to this instance; used in share emails so recipients can
+# click back in. On the Pi: http://192.168.68.121:8080 (or domain if proxied).
+base_url = "http://127.0.0.1:8080"
+
+[share]
+enabled = true
+# Where share emails land. Typically your own inbox for quick forward.
+recipient = ""
+sender    = ""
+# Gmail SMTP defaults; fill smtp_user + smtp_password with a Gmail address
+# and an app password (https://myaccount.google.com/apppasswords).
+smtp_host = "smtp.gmail.com"
+smtp_port = 465
+smtp_user = ""
+smtp_password = ""

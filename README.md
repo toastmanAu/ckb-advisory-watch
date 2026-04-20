@@ -59,7 +59,7 @@ Runs as a systemd user service on an **Orange Pi Zero 3** (Armbian / Ubuntu 24.0
 - **Phase 1** — Component DB: 75 projects seeded ✓; Cargo.lock parser ✓; npm / go.mod / pyproject parsers pending; GitHub walker pending
 - **Phase 2** ✓ Advisory ingest (OSV): bulk-zip fetcher with If-None-Match caching, 5 ecosystems (crates.io, npm, PyPI, Go, Maven), per-ecosystem error isolation, asyncio poll loop wired into `main.py`. GHSA / RustSec / PyPA direct pollers as freshness upgrades later.
 - **Phase 3** — Matching engine: version-range intersection, CVSS, dedup, manual allowlist
-- **Phase 4** — Outputs: MD template, vault sync, wyltekindustries page, Telegram bot
+- **Phase 4** — Outputs: browser dashboard ✓ (read-only, share-to-email); Telegram bot, vault sync, wyltekindustries page pending
 
 ## Install (Zero 3)
 
@@ -75,6 +75,23 @@ cp systemd/ckb-advisory-watch.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now ckb-advisory-watch
 ```
+
+## Open the dashboard
+
+Once the service is running:
+
+```
+http://<host-or-ip>:8080/
+```
+
+URL structure:
+- `/` — landing (glance + triage + exploration)
+- `/p/<owner>/<repo>` — per-project matches
+- `/a/<source-id>` — per-advisory affected projects
+
+Share buttons on match rows and advisory pages send a structured email
+via Gmail SMTP to the address in `[share].recipient` — configure
+`smtp_user` and `smtp_password` (app password) in `config.toml`.
 
 ## License
 

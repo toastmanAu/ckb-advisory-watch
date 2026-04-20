@@ -13,11 +13,17 @@ import argparse
 import asyncio
 import logging
 import signal
+import socket
 import sqlite3
+import sqlite3 as _sqlite3  # re-imported name for conn_factory closure
 import sys
 from pathlib import Path
 
 import httpx
+from aiohttp import web
+
+from agent.dashboard import server as dashboard_server
+from agent.dashboard import share as dashboard_share
 
 try:
     import tomllib  # Python 3.11+
@@ -99,6 +105,61 @@ async def github_poll_loop(
             continue
 
 
+async def start_dashboard(
+    config: dict,
+    data_dir: Path,
+    stop: asyncio.Event,
+) -> None:
+    """aiohttp AppRunner lifecycle bound to the shared stop Event.
+
+    Each request opens its own read-only SQLite connection via the factory;
+    the agent's writer loop is untouched."""
+    dash_cfg = config.get("dashboard", {}) or {}
+    share_cfg_d = config.get("share", {}) or {}
+    if not share_cfg_d.get("enabled", False):
+        log.info("dashboard: share disabled (config [share].enabled = false)")
+
+    db_path = data_dir / "state.db"
+
+    def conn_factory() -> _sqlite3.Connection:
+        return _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+
+    share_cfg = dashboard_share.ShareConfig(
+        recipient=share_cfg_d.get("recipient", ""),
+        sender=share_cfg_d.get("sender", ""),
+        smtp_host=share_cfg_d.get("smtp_host", "smtp.gmail.com"),
+        smtp_port=int(share_cfg_d.get("smtp_port", 465)),
+        smtp_user=share_cfg_d.get("smtp_user", ""),
+        smtp_password=share_cfg_d.get("smtp_password", ""),
+        dashboard_base_url=dash_cfg.get("base_url", "http://127.0.0.1:8080"),
+    )
+
+    app = dashboard_server.build_app(
+        conn_factory=conn_factory,
+        share_config=share_cfg,
+        hostname=socket.gethostname(),
+    )
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        host=dash_cfg.get("host", "0.0.0.0"),
+        port=int(dash_cfg.get("port", 8080)),
+    )
+    await site.start()
+    log.info(
+        "dashboard: listening on http://%s:%d",
+        dash_cfg.get("host", "0.0.0.0"),
+        int(dash_cfg.get("port", 8080)),
+    )
+
+    try:
+        await stop.wait()
+    finally:
+        await runner.cleanup()
+
+
 async def run(config: dict, schema_path: Path) -> None:
     data_dir = Path(config.get("agent", {}).get("data_dir", "data"))
     ecosystems = list(
@@ -137,6 +198,7 @@ async def run(config: dict, schema_path: Path) -> None:
             await asyncio.gather(
                 osv_poll_loop(conn, osv_client, ecosystems, osv_interval, stop),
                 github_poll_loop(conn, gh_client, github_interval, stop),
+                start_dashboard(config, data_dir, stop),
             )
         finally:
             log.info("ckb-advisory-watch stopped")
