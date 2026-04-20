@@ -149,3 +149,29 @@ async def test_ingest_second_run_is_conditional(db: sqlite3.Connection):
     assert n1 == 1 and n2 == 0
     assert len(requests_seen) == 2
     assert requests_seen[1].headers["if-none-match"] == '"e1"'
+
+
+@pytest.mark.asyncio
+async def test_ingest_all_isolates_failures(db: sqlite3.Connection):
+    """One ecosystem returning 500 must not abort the others."""
+    from agent.sources.osv import ingest_all
+
+    zip_ok = _build_zip(["GHSA-2226-4v3c-cff8"])
+    with respx.mock() as mock:
+        mock.get(f"{OSV_BASE}/crates.io/all.zip").mock(
+            return_value=httpx.Response(200, content=zip_ok, headers={"etag": '"c"'})
+        )
+        mock.get(f"{OSV_BASE}/npm/all.zip").mock(
+            return_value=httpx.Response(500)
+        )
+        mock.get(f"{OSV_BASE}/PyPI/all.zip").mock(
+            return_value=httpx.Response(200, content=zip_ok, headers={"etag": '"p"'})
+        )
+        async with httpx.AsyncClient() as client:
+            results = await ingest_all(db, client, ["crates.io", "npm", "PyPI"])
+
+    assert results["crates.io"] == 1
+    assert isinstance(results["npm"], httpx.HTTPStatusError)
+    assert results["PyPI"] == 1
+    (count,) = db.execute("SELECT COUNT(*) FROM advisory").fetchone()
+    assert count == 1  # same advisory upserted from both crates.io and PyPI zips

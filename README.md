@@ -55,9 +55,9 @@ Runs as a systemd user service on an **Orange Pi Zero 3** (Armbian / Ubuntu 24.0
 
 ## Phases
 
-- **Phase 0** — Infra: SSH key ✓ · repo ✓ · deps install · agent skeleton · SQLite schema
-- **Phase 1** — Component DB: seed Nervos repo list, lockfile parsers (Cargo / npm / go.mod), transitive deps
-- **Phase 2** — Advisory ingest: OSV first (simplest), then GHSA, RustSec, PyPA
+- **Phase 0** ✓ Infra: SSH key, repo, deps install, agent skeleton, SQLite schema
+- **Phase 1** — Component DB: 75 projects seeded ✓; Cargo.lock parser ✓; npm / go.mod / pyproject parsers pending; GitHub walker pending
+- **Phase 2** ✓ Advisory ingest (OSV): bulk-zip fetcher with If-None-Match caching, 5 ecosystems (crates.io, npm, PyPI, Go, Maven), per-ecosystem error isolation, asyncio poll loop wired into `main.py`. GHSA / RustSec / PyPA direct pollers as freshness upgrades later.
 - **Phase 3** — Matching engine: version-range intersection, CVSS, dedup, manual allowlist
 - **Phase 4** — Outputs: MD template, vault sync, wyltekindustries page, Telegram bot
 

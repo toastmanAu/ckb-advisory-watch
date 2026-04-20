@@ -18,6 +18,13 @@ ghsa = 1800             # 30 min
 rustsec = 3600
 pypa = 3600
 
+[osv]
+# OSV.dev ecosystems to pull bulk zips for. Names must match what OSV uses
+# (case-sensitive — "PyPI" not "pypi", "crates.io" not "Cargo").
+# npm is the biggest (~190 MB zip) — if the Zero 3 is tight on RAM or
+# bandwidth, drop it and rely on the GHSA poller instead (Phase 2b).
+ecosystems = ["crates.io", "npm", "PyPI", "Go", "Maven"]
+
 [outputs.vault]
 enabled = true
 path = "/home/phill/Documents/loacal-vault/Projects/CKB Advisory Watch/reports"

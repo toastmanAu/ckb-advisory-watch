@@ -227,7 +227,12 @@ def upsert_advisory(conn: sqlite3.Connection, raw: dict[str, Any]) -> int:
     """Write one OSV record into advisory + advisory_affects.
 
     Idempotent on (source, source_id). On conflict, updates fields and
-    replaces advisory_affects rows wholesale — source of truth is upstream."""
+    replaces advisory_affects rows wholesale — source of truth is upstream.
+
+    Does not commit. Callers are responsible for the enclosing transaction —
+    see ingest_ecosystem, which wraps a whole ecosystem's upserts in one
+    transaction. Per-record commits fsync each record and drop throughput by
+    ~100x on small SSDs, which matters on the Zero 3."""
     p = parse_osv_record(raw)
     affects = extract_affects(raw)
     now = int(time.time())
@@ -274,7 +279,6 @@ def upsert_advisory(conn: sqlite3.Connection, raw: dict[str, Any]) -> int:
             for a in affects
         ],
     )
-    conn.commit()
     return advisory_id
 
 
@@ -335,6 +339,7 @@ def read_poller_state(conn: sqlite3.Connection, key: str) -> str | None:
 
 
 def _write_poller_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    """Does not commit — caller owns the transaction, same as upsert_advisory."""
     conn.execute(
         """
         INSERT INTO poller_state (key, value, updated_at)
@@ -345,7 +350,6 @@ def _write_poller_state(conn: sqlite3.Connection, key: str, value: str) -> None:
         """,
         (key, value, int(time.time())),
     )
-    conn.commit()
 
 
 # ---------- orchestrator ----------
@@ -357,14 +361,43 @@ async def ingest_ecosystem(
     ecosystem: str,
 ) -> int:
     """Fetch + upsert one ecosystem. Returns the number of advisories written
-    (0 when upstream returns 304 Not Modified)."""
+    (0 when upstream returns 304 Not Modified).
+
+    All upserts for the ecosystem + the ETag write happen in a single
+    transaction. Either the whole ecosystem lands atomically or nothing
+    does — prevents half-written state on crash, and is ~100x faster than
+    per-record commits on the Zero 3's SD card."""
     state_key = f"osv.etag.{ecosystem}"
     prev_etag = read_poller_state(conn, state_key)
     result = await fetch_ecosystem(client, ecosystem, prev_etag)
     if not result.modified:
         return 0
-    for raw in result.records:
-        upsert_advisory(conn, raw)
-    if result.etag:
-        _write_poller_state(conn, state_key, result.etag)
+    with conn:  # BEGIN / COMMIT (or ROLLBACK on exception)
+        for raw in result.records:
+            upsert_advisory(conn, raw)
+        if result.etag:
+            _write_poller_state(conn, state_key, result.etag)
     return len(result.records)
+
+
+DEFAULT_ECOSYSTEMS = ("crates.io", "npm", "PyPI", "Go", "Maven")
+
+
+async def ingest_all(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    ecosystems: Iterable[str] = DEFAULT_ECOSYSTEMS,
+) -> dict[str, int | Exception]:
+    """Run ingest_ecosystem for each ecosystem, isolating failures.
+
+    One ecosystem's fetch failing (network blip, upstream 5xx, malformed zip)
+    must not abort the others. Result is a dict mapping ecosystem -> count
+    written OR the exception raised. Callers decide whether a single failed
+    ecosystem is worth escalating."""
+    results: dict[str, int | Exception] = {}
+    for eco in ecosystems:
+        try:
+            results[eco] = await ingest_ecosystem(conn, client, eco)
+        except Exception as exc:
+            results[eco] = exc
+    return results
