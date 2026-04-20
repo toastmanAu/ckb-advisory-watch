@@ -81,13 +81,14 @@ Each tick (default 30 seconds):
    "no destinations" and sleep.
 2. **Baseline check.** On first tick after enable, call `baseline_if_first_run(conn)`.
    See §5.
-3. **Find unemitted advisories.** SQL:
+3. **Find unemitted advisories per sub-channel.** SQL is parameterised on
+   sub-channel name (`telegram.dm` or `telegram.channel`):
    ```sql
    SELECT DISTINCT m.advisory_id
    FROM match m
    JOIN advisory a ON a.id = m.advisory_id
    LEFT JOIN emission e
-     ON e.match_id = m.id AND e.channel = 'telegram'
+     ON e.match_id = m.id AND e.channel = ?   -- sub-channel name
    WHERE e.id IS NULL
      AND m.state = 'open'
      AND CASE COALESCE(a.severity, 'unknown')
@@ -105,69 +106,96 @@ Each tick (default 30 seconds):
    b. Filter `advisory.matches` to only those with no `telegram` emission row
       yet (re-query or filter in Python against a set of unemitted match_ids).
    c. Render HTML message via `format_message(advisory, filtered_matches, config)`.
-   d. POST to Telegram `sendMessage` for each destination that's configured
-      (DM first if present, then channel). See §6 for the exact request shape.
+   d. POST to Telegram `sendMessage` for the sub-channel's destination. See
+      §6 for the exact request shape.
    e. On success (200 OK): within a single DB transaction, INSERT `emission`
-      rows for every unemitted match_id, `channel='telegram'`, `artifact_path`
-      = the returned Telegram `message_id` (or `"dm:<id>,channel:<id>"` if both
-      destinations received it).
-   f. On transient failure (HTTP 5xx, 429): log, sleep per `retry_after` if
-      429, leave emission rows uninserted, return from the iteration — next
-      tick retries the same advisory naturally.
+      rows for every unemitted match_id of this advisory, using this
+      sub-channel's name as `emission.channel` and the returned Telegram
+      `message_id` as `artifact_path`.
+   f. On transient failure (HTTP 5xx, 429): log, sleep per `retry_after`
+      if 429, leave emission rows uninserted, return from the iteration.
+      Next tick retries this advisory on this sub-channel only — the other
+      sub-channel is unaffected.
    g. On permanent failure (HTTP 400 + "chat not found" / bad payload): log
       with full error, INSERT emission rows with `artifact_path='error:<reason>'`
-      so the loop doesn't retry a poison message every 30 seconds.
+      so the loop doesn't retry a poison message every 30 seconds on this
+      sub-channel. The other sub-channel still runs normally.
 5. **Sleep** `poll.telegram` seconds (default 30), interruptible via `stop` Event.
 
-### 4.2 Single-destination vs dual-destination
+### 4.2 Sub-channels per destination
 
-When both `chat_id` and `channel_id` are non-empty, each advisory produces
-two `sendMessage` calls but only one set of `emission` rows (one per
-match_id). `artifact_path` captures both IDs as `"dm:<msg_id>,channel:<msg_id>"`
-so the record shows where it landed. Partial success (DM works, channel
-fails with 400) is treated as permanent-success-for-the-successful-dest,
-transient-retry-for-the-failed. In practice we commit the emission row
-immediately if the DM succeeds (so we don't double-DM on retry) and log
-the channel failure as a warning. Channel retry on next tick — but without
-a way to know which destinations already succeeded. Accept the asymmetry:
-channel failures are rare (admin bot in a private channel, chat_id is stable).
+To track each destination's delivery independently without a schema change,
+the `emission.channel` column carries a sub-channel name:
 
-Simpler rule for v0: **if DM succeeds, emit. If DM succeeds but channel
-fails, log a warning and still emit — don't block on channel.** If DM
-fails, transient-retry the whole thing. Revisit if users end up unhappy.
+- `telegram.dm` — delivered to the DM `chat_id`
+- `telegram.channel` — delivered to the `channel_id`
+
+Each destination gets its own `emission` row per match. The existing
+`UNIQUE (match_id, channel)` constraint prevents duplicate delivery
+per-destination. Cost: 2× emission rows per match when both are configured —
+acceptable for an append-only audit table.
+
+**Poll loop processes each configured sub-channel independently.** One tick
+finds unemitted `telegram.dm` matches, renders once per advisory, sends to
+the DM chat_id, commits DM emission rows. Then separately finds unemitted
+`telegram.channel` matches, sends to channel_id, commits channel emission
+rows. A transient failure on one sub-channel only retries that sub-channel
+on the next tick — no duplicate DM when the channel is flaky.
+
+Rendering happens once per advisory per tick and is reused across both
+sub-channels that tick, so we don't pay the template cost twice.
+
+If only one of `chat_id` / `channel_id` is set, that sub-channel processes
+alone. If neither is set, the whole loop sleeps (see §8).
 
 ## 5. Cold-start baseline
 
-`baseline_if_first_run(conn)` inserts `emission` rows for every currently
-open match that meets the severity floor, without actually sending.
+`baseline_if_first_run(conn, sub_channel, min_severity_level)` inserts
+`emission` rows for every currently open match at or above the severity
+floor, without actually sending. Runs once per sub-channel.
 
-Guard: check `poller_state` for key `telegram.baseline_done`. If present,
-skip. If absent, run the baseline then write the key.
+Guards: check `poller_state` for key `telegram.baseline_done.<sub_channel>`.
+Present → skip. Absent → run baseline for this sub-channel then write the
+key. Keying per sub-channel means adding a second destination later
+(e.g., capturing `channel_id` a week after going live) cleanly baselines
+just the new sub-channel.
 
-SQL (transaction):
+SQL (transaction, parameterised on sub-channel name and severity floor):
 ```sql
 INSERT INTO emission (match_id, channel, emitted_at, artifact_path)
-SELECT m.id, 'telegram', strftime('%s','now'), 'baseline'
+SELECT m.id, ?, strftime('%s','now'), 'baseline'
 FROM match m
 JOIN advisory a ON a.id = m.advisory_id
 LEFT JOIN emission e
-  ON e.match_id = m.id AND e.channel = 'telegram'
+  ON e.match_id = m.id AND e.channel = ?
 WHERE e.id IS NULL
   AND m.state = 'open'
-  -- no severity filter: baseline ALL open matches to prevent future
-  -- threshold-change from re-exposing the backlog
+  AND CASE COALESCE(a.severity, 'unknown')
+        WHEN 'critical' THEN 4
+        WHEN 'high'     THEN 3
+        WHEN 'medium'   THEN 2
+        WHEN 'low'      THEN 1
+        ELSE 0
+      END >= ?   -- min_severity as numeric
 ;
 INSERT OR REPLACE INTO poller_state (key, value, updated_at)
-VALUES ('telegram.baseline_done', '1', strftime('%s','now'));
+VALUES (?, '1', strftime('%s','now'));  -- telegram.baseline_done.<sub_channel>
 ```
 
-Rationale for baselining ALL severities, not just `>= min_severity`:
-if the user starts with `min_severity="medium"` then drops to `"low"`
-later, we don't want the old-low backlog to suddenly page them.
+Rationale for baselining at `>= min_severity` (not ALL severities): the
+user's current threshold is their declared interest level. If they later
+*drop* the threshold from `"medium"` to `"low"`, old low-severity matches
+*will* fire — that's the user asking to see what was previously hidden,
+which is the expected behaviour of a threshold knob.
 
-If the user ever wants to fire alerts for the current backlog, they can
-manually delete the `telegram.baseline_done` key from `poller_state` OR
-run a future `--backfill` CLI (not in v0 scope).
+Side effect: if the user *raises* the threshold later (e.g., `"medium"` →
+`"high"`), the old baseline still covers the now-out-of-scope matches, so
+they won't page retroactively. Good.
+
+If the user ever wants to catch up on the current backlog, they can
+delete the `telegram.baseline_done.<sub_channel>` key and relaunch — the
+next tick will re-baseline only matches at or above the *then-current*
+threshold, and newly-added matches since baseline will fire.
 
 ## 6. Message format
 
@@ -208,9 +236,9 @@ actually want). We escape explicitly per-field.
 |---|---|---|
 | `summary_truncated` max chars | 500 | Keeps message skimmable |
 | `max_matches` | 8 | "… and N more" if exceeded |
-| Total message cap | 3800 chars | Telegram limit is 4096; reserve 296 for inline keyboard JSON |
+| Total message cap | 4000 chars | Telegram's `text` field limit is 4096; `reply_markup` is a separate field and doesn't count against the text budget. 96-char margin covers off-by-one errors in truncation math. |
 
-If the rendered message exceeds 3800 chars after all of the above, truncate
+If the rendered message exceeds 4000 chars after all of the above, truncate
 the summary further in 50-char steps and re-render. Never split into two
 messages — splitting by advisory breaks the one-message-per-CVE model.
 
@@ -289,10 +317,16 @@ agent/output/
 ```
 
 Module exports:
-- `telegram_poll_loop(conn, config, stop)` — the asyncio coroutine wired into `main.py`
-- `format_message(advisory, matches, config) -> tuple[str, dict]` — returns (html_body, inline_keyboard)
-- `send_message(client, bot_token, chat_id, html_body, inline_keyboard) -> int` — returns Telegram message_id; raises on permanent errors
-- `baseline_if_first_run(conn)` — idempotent via poller_state
+- `telegram_poll_loop(conn, config, stop)` — the asyncio coroutine wired into `main.py`. Iterates configured sub-channels per tick.
+- `format_message(advisory, matches, config) -> tuple[str, dict]` — returns (html_body, inline_keyboard). Sub-channel-agnostic; called once per advisory per tick.
+- `send_message(client, bot_token, destination_chat_id, html_body, inline_keyboard) -> int` — returns Telegram message_id; raises on permanent errors. Called once per sub-channel per advisory per tick.
+- `baseline_if_first_run(conn, sub_channel, min_severity_level)` — idempotent via poller_state key `telegram.baseline_done.<sub_channel>`.
+
+Sub-channel constants (module-level):
+```python
+SUBCH_DM      = "telegram.dm"
+SUBCH_CHANNEL = "telegram.channel"
+```
 
 Reuses:
 - `queries.advisory_context` and `AdvisoryContext`/`MatchRow` dataclasses from the dashboard package.
@@ -318,24 +352,41 @@ No new dependencies.
 ### 10.2 Integration (respx + aiohttp)
 
 - `test_telegram_poll_sends_on_new_match` — seed one unemitted critical match,
-  respx mocks Telegram API, assert sendMessage called with expected body +
-  HTML, assert emission row written with `artifact_path` = mocked message_id.
+  DM-only config, respx mocks Telegram API, assert sendMessage called with
+  expected body + HTML, assert `telegram.dm` emission row written with
+  `artifact_path` = mocked message_id.
 - `test_telegram_poll_groups_by_advisory` — two unemitted matches, same
-  advisory, different projects: ONE sendMessage call, TWO emission rows.
+  advisory, different projects: ONE sendMessage call, TWO `telegram.dm`
+  emission rows, both with the same `artifact_path` message_id.
 - `test_telegram_poll_respects_min_severity` — seed below threshold,
   assert no sendMessage, no emission rows.
 - `test_telegram_poll_429_retries_after_delay` — respx returns 429 with
-  `retry_after: 1`, assert sleep + retry happens.
+  `retry_after: 1`, assert sleep + retry happens on the same sub-channel.
 - `test_telegram_poll_400_poisons_emission` — respx returns 400 "chat not
-  found", assert emission row written with `artifact_path='error:...'`, assert
-  next tick does NOT retry.
-- `test_telegram_poll_baseline_skips_send` — matches exist but baseline_done
-  key absent, assert baseline inserts emission rows WITHOUT calling sendMessage.
-- `test_telegram_poll_dm_success_channel_fail` — DM returns 200, channel
-  returns 400 "chat not found": assert emission rows written (keyed on DM
-  message_id), warning logged for channel.
-- `test_telegram_poll_both_destinations_on_success` — assert `artifact_path`
-  contains both DM and channel message IDs.
+  found", assert `telegram.dm` emission row written with
+  `artifact_path='error:...'`, assert next tick does NOT retry that advisory
+  on that sub-channel.
+- `test_telegram_poll_baseline_skips_send` — matches exist but
+  `telegram.baseline_done.telegram.dm` key absent, assert baseline inserts
+  `telegram.dm` emission rows (at-or-above severity floor only) with
+  `artifact_path='baseline'` and WITHOUT calling sendMessage.
+- `test_telegram_poll_baseline_respects_severity_floor` — seed critical +
+  low matches, min_severity=medium. Assert baseline inserts `telegram.dm`
+  emission row ONLY for the critical match. Low match remains unemitted
+  (and future ticks won't send it either because the floor still filters it).
+- `test_telegram_poll_dm_and_channel_independent` — both destinations
+  configured; DM returns 200 and channel returns 400 "chat not found".
+  Assert `telegram.dm` emission rows written with real message_id, assert
+  `telegram.channel` emission rows written with `artifact_path='error:...'`.
+  Next tick: no sendMessage calls (both sub-channels are either sent or
+  poisoned for this advisory).
+- `test_telegram_poll_dm_transient_does_not_affect_channel` — DM returns
+  500, channel returns 200. Assert `telegram.channel` emission rows
+  written, assert no `telegram.dm` emission rows, assert next tick retries
+  only the DM sub-channel.
+- `test_telegram_poll_both_destinations_on_success` — both destinations
+  return 200. Assert TWO sets of emission rows: one per sub-channel, each
+  with the corresponding message_id in `artifact_path`.
 
 ### 10.3 Live smoke
 
