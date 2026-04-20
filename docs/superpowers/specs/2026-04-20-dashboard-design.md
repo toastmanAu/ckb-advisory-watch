@@ -53,14 +53,14 @@ fix version. No auth friction. No context loss.
   ┌────────────────────────────────────────────────────┐
   │ agent/main.py (existing asyncio loop)              │
   │                                                    │
-  │   ┌──────────────────┐  ┌──────────────────┐      │
-  │   │ osv_poll_loop    │  │ github_poll_loop │      │
-  │   └────────┬─────────┘  └────────┬─────────┘      │
+  │   ┌──────────────────┐  ┌──────────────────┐       │
+  │   │ osv_poll_loop    │  │ github_poll_loop │       │
+  │   └────────┬─────────┘  └────────┬─────────┘       │
   │            │                     │                 │
   │            └──── write ──────────┘                 │
   │                    │                               │
-  │              ┌─────▼─────┐                         │
-  │              │  SQLite   │ ← read ──┐              │
+  │              ┌─────▼────┐              	       │
+  │              │  SQLite   │ ← read ─┐  	       │
   │              │ state.db  │          │              │
   │              └───────────┘          │              │
   │                                     │              │
@@ -73,7 +73,7 @@ fix version. No auth friction. No context loss.
   │   │     POST /share/match/<id>        │            │
   │   │     POST /share/advisory/<id>     │            │
   │   │   renderer: Jinja2 templates      │            │
-  │   │   share   : stdlib smtplib → Gmail│            │
+  │   │   share   : stdlib smtplib → Gmail│  	       │
   │   └───────────────────────────────────┘            │
   └────────────────────────────────────────────────────┘
                     ▲
