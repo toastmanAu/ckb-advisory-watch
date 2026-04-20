@@ -1,13 +1,39 @@
-https://github.com/nervosnetwork 	#All Repositories
-https://github.com/appfi5			#All Repositories
-Sonami(rosen bridge integrator) repositories
-ickb repositories
-quantum purse
-pocket node
-all ckb related repos of mine
-ckbull/bitcoin light
-imtoken wallet
-Nervina Lab repositories (old but some still in use)
-CCC if its not under the nervos network org
-same with lumos as above
+# Raw seed research log. Resolved entries moved into projects.yaml.
+# Append new candidates here; Claude resolves them to real org/repo slugs.
 
+# --- Resolved 2026-04-20 ---
+#   nervosnetwork org        → 14 curated active repos (ckb, ckb-vm, molecule,
+#                               fiber, light-client, ckb-std, ckb-cli,
+#                               system-scripts, standalone-debugger, neuron,
+#                               sdk-java, sdk-go, explorer, explorer-frontend)
+#   appfi5                   → 5 repos (Web3-Platform, explorer-frontend-next,
+#                               explorer-web, explorer-worker, official-website)
+#   ickb                     → ickb/contracts, ickb/interface, ickb/bot, ickb/stack
+#   quantum purse            → quantumpurse/ (quantum-purse, v2, key-vault-wasm)
+#   ckbull / bitcoin light   → Peersyst/ckbull-mobile + Peersyst/ckb-peersyst-sdk
+#   Nervina Lab              → 7 repos (joyid-sdk-js, joyid-sdk-go, cota-*, dex-*)
+#   CCC                      → ckb-devrel/ccc (was wrongly at ckb-ecofund)
+#   lumos                    → ckb-js/lumos (migrated from nervosnetwork)
+#   perun                    → 4 CKB-specific repos under perun-network/
+#   rosen bridge             → 7 active repos under rosen-bridge/ (watching
+#                               upstream ahead of CKB integration)
+#   toastmanAu CKB repos     → 16 self-watched (production apps + security
+#                               scripts: FiberQuest, Cellswap, CKBFS browser,
+#                               DOB minter, ML-DSA lock, LSDL, ByteRent,
+#                               cellnames, fiber-installer, etc.)
+
+# --- Still open ---
+#   Sonami (Rosen integrator CKB incarnation)
+#     - no canonical GitHub org found yet. zakitmobad-cloud/SonamiLayer2 is
+#       the only hit and looks low-signal. Need an authoritative source —
+#       repo URL from the Sonami team or a Rosen community channel.
+#
+#   pocket node
+#     - unclear which project. Options: a CKB light/full node wrapper project,
+#       or unrelated Pocket Network (not CKB). Please disambiguate.
+#
+#   imtoken wallet
+#     - imToken itself is closed source. Closest open repo is consenlabs/token-core
+#       (Rust, EVM-focused) — adding pulls in lots of EVM-stack advisories with
+#       little CKB signal. Leaving out for now; reconsider if imToken publishes
+#       a CKB-specific integration repo.

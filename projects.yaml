@@ -6,9 +6,12 @@
 # and one level deep).
 #
 # branch defaults to the repo's default branch.
+#
+# Curated: only active, dep-heavy, production repos. Archived repos and pure
+# asm/data/docs repos skipped (no advisory surface). Research log in seeds.txt.
 
 projects:
-  # Core protocol
+  # --- Core protocol (nervosnetwork) ---
   - slug: nervosnetwork/ckb
     display_name: CKB Node
   - slug: nervosnetwork/ckb-vm
@@ -17,34 +20,179 @@ projects:
     display_name: Molecule (serialization)
   - slug: nervosnetwork/fiber
     display_name: Fiber (payment channels)
-
-  # Light client
   - slug: nervosnetwork/ckb-light-client
     display_name: CKB Light Client
+  - slug: nervosnetwork/ckb-std
+    display_name: ckb-std (Rust contract stdlib)
+  - slug: nervosnetwork/ckb-cli
+    display_name: CKB CLI
+  - slug: nervosnetwork/ckb-system-scripts
+    display_name: CKB System Scripts
+  - slug: nervosnetwork/ckb-standalone-debugger
+    display_name: CKB Standalone Debugger
+  - slug: nervosnetwork/neuron
+    display_name: Neuron (desktop wallet)
+  - slug: nervosnetwork/ckb-sdk-java
+    display_name: CKB SDK (Java)
+  - slug: nervosnetwork/ckb-sdk-go
+    display_name: CKB SDK (Go)
+  - slug: nervosnetwork/ckb-explorer
+    display_name: CKB Explorer (backend)
+  - slug: nervosnetwork/ckb-explorer-frontend
+    display_name: CKB Explorer (frontend)
 
-  # JS/TS SDKs
-  - slug: ckb-ecofund/ccc
-    display_name: CCC (CKB Common Chain kit)
+  # --- JS/TS SDKs & devtools ---
+  - slug: ckb-devrel/ccc
+    display_name: CCC (CKBers' Codebase)
+  - slug: ckb-devrel/offckb
+    display_name: offCKB (local dev network)
+  - slug: ckb-devrel/ccc-locks
+    display_name: CCC Locks
+  - slug: ckb-devrel/ssri-server
+    display_name: SSRI Server
+  - slug: ckb-devrel/create-ccc-app
+    display_name: create-ccc-app
+  - slug: ckb-js/lumos
+    display_name: Lumos (dapp framework)
+  - slug: ckb-js/ckb-sdk-js
+    display_name: CKB SDK (JS)
   - slug: ckb-js/ckb-js-vm
     display_name: CKB-JS-VM
+  - slug: ckb-js/ckit
+    display_name: ckit (apps toolkit)
+  - slug: ckb-js/nexus
+    display_name: Nexus (wallet extension)
 
-  # DOB / Spore
+  # --- Explorer / infra (Magickbase, appfi5) ---
+  - slug: appfi5/Web3-Platform
+    display_name: Appfi5 Web3 Platform
+  - slug: appfi5/ckb-explorer-frontend-next
+    display_name: CKB Explorer Frontend (next)
+  - slug: appfi5/ckb-explorer-web
+    display_name: CKB Explorer Web API (Java)
+  - slug: appfi5/ckb-explorer-worker
+    display_name: CKB Explorer Worker (Java)
+  - slug: appfi5/nervos-official-website
+    display_name: Nervos Official Website
+  - slug: Magickbase/force-bridge
+    display_name: Force Bridge (Magickbase)
+  - slug: Magickbase/godwoken_explorer
+    display_name: Godwoken Explorer
+
+  # --- Wallets (JoyID, Nervina, CKBull/Peersyst, Quantum Purse) ---
+  - slug: nervina-labs/joyid-sdk-js
+    display_name: JoyID SDK (JS)
+  - slug: nervina-labs/joyid-sdk-go
+    display_name: JoyID SDK (Go)
+  - slug: nervina-labs/cota-sdk-js
+    display_name: CoTA SDK (JS)
+  - slug: nervina-labs/cota-aggregator
+    display_name: CoTA Aggregator
+  - slug: nervina-labs/cota-smt
+    display_name: CoTA SMT
+  - slug: nervina-labs/ckb-dex-sdk
+    display_name: CKB DEX SDK (Nervina)
+  - slug: nervina-labs/ckb-dex-contract
+    display_name: CKB DEX Contract (Nervina)
+  - slug: Peersyst/ckbull-mobile
+    display_name: CKBull Mobile Wallet
+  - slug: Peersyst/ckb-peersyst-sdk
+    display_name: CKB Peersyst SDK
+  - slug: quantumpurse/quantum-purse
+    display_name: Quantum Purse (PQ wallet)
+  - slug: quantumpurse/quantum-purse-v2
+    display_name: Quantum Purse v2
+  - slug: quantumpurse/key-vault-wasm
+    display_name: Quantum Purse key-vault (SPHINCS+)
+
+  # --- DOB / Spore ---
   - slug: sporeprotocol/spore-sdk
     display_name: Spore SDK
 
-  # JoyID
-  - slug: nervina-labs/joyid-sdk
-    display_name: JoyID SDK
+  # --- DeFi / liquid staking / state channels ---
+  - slug: ickb/contracts
+    display_name: iCKB Contracts
+  - slug: ickb/interface
+    display_name: iCKB Interface (dApp)
+  - slug: ickb/bot
+    display_name: iCKB Limit-Order Bot
+  - slug: ickb/stack
+    display_name: iCKB Stack
+  - slug: perun-network/perun-ckb-contract
+    display_name: Perun CKB Contract
+  - slug: perun-network/perun-ckb-backend
+    display_name: Perun CKB Backend
+  - slug: perun-network/perun-nervos-demo
+    display_name: Perun Nervos Demo
+  - slug: perun-network/perun-ckb-devnet-scripts
+    display_name: Perun CKB Devnet Scripts
 
-  # toastmanAu self-watch (real apps built on this stack)
+  # --- Bridges ---
+  # Rosen Bridge is Ergo-centric but community integrators (Sonami) are
+  # bringing it to CKB — watching upstream for anything that lands on CKB.
+  - slug: rosen-bridge/guard-service
+    display_name: Rosen Bridge Guard Service
+  - slug: rosen-bridge/watcher
+    display_name: Rosen Bridge Watcher
+  - slug: rosen-bridge/scanner
+    display_name: Rosen Bridge Scanner
+  - slug: rosen-bridge/contract
+    display_name: Rosen Bridge Contract
+  - slug: rosen-bridge/ui
+    display_name: Rosen Bridge UI
+  - slug: rosen-bridge/sign-protocols
+    display_name: Rosen Bridge Sign Protocols
+  - slug: rosen-bridge/rosenet
+    display_name: RosenNet
+
+  # --- toastmanAu self-watch (production apps / security-critical scripts) ---
   - slug: toastmanAu/fiberquest
     display_name: FiberQuest
   - slug: toastmanAu/ckb-cell-marketplace
     display_name: Cellswap / CKB Cell Marketplace
+  - slug: toastmanAu/ckbfs-browser
+    display_name: CKBFS Browser
+  - slug: toastmanAu/ckbfs-viewer
+    display_name: CKBFS Viewer
+  - slug: toastmanAu/ckb-dob-minter
+    display_name: CKB DOB Minter
+  - slug: toastmanAu/ckb-mldsa-lock
+    display_name: CKB ML-DSA Lock (PQ lock scripts)
+  - slug: toastmanAu/ckb-lsdl
+    display_name: LSDL (Less Simple DEX Lock)
+  - slug: toastmanAu/byterent
+    display_name: ByteRent (storage rental protocol)
+  - slug: toastmanAu/cellnames
+    display_name: Cellnames (decentralised DNS)
+  - slug: toastmanAu/ckb-access
+    display_name: ckb-access (installers)
+  - slug: toastmanAu/fiber-installer
+    display_name: Fiber Installer
+  - slug: toastmanAu/fiber-rpc-js
+    display_name: Fiber RPC (JS client)
+  - slug: toastmanAu/ckb-whale-bot
+    display_name: CKB Whale Bot
+  - slug: toastmanAu/ckb-stratum-proxy
+    display_name: CKB Stratum Proxy
+  - slug: toastmanAu/ckb-antiscam
+    display_name: CKB AntiScam Bot
+  - slug: toastmanAu/ckb-advisory-watch
+    display_name: ckb-advisory-watch (self)
 
-# --- seed list needs user additions here ---
-# Candidates to research:
-#   - cryptape/* organisation repos (Cryptape tooling outside nervosnetwork)
-#   - Japanese / Korean community SDKs
-#   - cellscript, ckb-cinnabar, ckbull (verify org names)
-#   - any CKBFS tooling you rely on
+# --- Unresolved candidates from seeds.txt (awaiting user confirmation) ---
+#
+# * "Sonami (rosen bridge integrator)" — no canonical GitHub org found for
+#   the CKB incarnation. Only hit: zakitmobad-cloud/SonamiLayer2 (low signal).
+#   Ask Sonami team for the real org/repos before adding.
+#
+# * "pocket node" — no CKB-specific project found under that name. Clarify
+#   which pocket node (Pocket Network? a CKB-specific one?) to include.
+#
+# * "imtoken wallet" — imToken itself is closed source; closest open repo is
+#   consenlabs/token-core (Rust, EVM-focused). Adding would pull in EVM-stack
+#   advisories; probably out of scope for a CKB watcher. Skipped.
+#
+# * Broad "all nervosnetwork repos" — ~80 repos, many archived. Curated the
+#   actively maintained + dep-heavy ones above. Additions welcome; also
+#   consider: ckb-js-toolkit, capsule (both last pushed 2024 — not stale
+#   enough to skip, not fresh enough to auto-include).
