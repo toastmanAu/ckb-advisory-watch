@@ -115,3 +115,45 @@ async def test_advisory_page_404_for_unknown(tmp_path, share_config):
     async with await _client(tmp_path, share_config) as client:
         resp = await client.get("/a/GHSA-not-real")
     assert resp.status == 404
+
+
+async def test_share_match_post_sends_and_redirects(tmp_path, share_config, monkeypatch):
+    sent_payloads = []
+    def fake_send(payload, cfg):
+        sent_payloads.append(payload)
+    monkeypatch.setattr("agent.dashboard.share.send_email", fake_send)
+
+    async with await _client(tmp_path, share_config) as client:
+        # Find the match id via the index page
+        resp = await client.post("/share/match/1", allow_redirects=False)
+        assert resp.status == 303
+        assert resp.headers["Location"].startswith("/") and "sent=1" in resp.headers["Location"]
+    assert len(sent_payloads) == 1
+    p = sent_payloads[0]
+    assert "GHSA-crit" in p.subject
+    assert "libgit2-sys" in p.subject
+
+
+async def test_share_advisory_post_sends_and_redirects(tmp_path, share_config, monkeypatch):
+    sent_payloads = []
+    monkeypatch.setattr("agent.dashboard.share.send_email",
+                        lambda payload, cfg: sent_payloads.append(payload))
+
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.post("/share/advisory/GHSA-crit", allow_redirects=False)
+        assert resp.status == 303
+        assert resp.headers["Location"] == "/a/GHSA-crit?sent=1"
+    assert len(sent_payloads) == 1
+    assert "GHSA-crit" in sent_payloads[0].subject
+
+
+async def test_share_match_post_propagates_smtp_error_as_query_param(tmp_path, share_config, monkeypatch):
+    import smtplib
+    def boom(payload, cfg):
+        raise smtplib.SMTPAuthenticationError(535, b"auth")
+    monkeypatch.setattr("agent.dashboard.share.send_email", boom)
+
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.post("/share/match/1", allow_redirects=False)
+    assert resp.status == 303
+    assert "sent_error=" in resp.headers["Location"]

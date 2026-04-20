@@ -146,6 +146,60 @@ async def advisory_view(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def share_match_view(request: web.Request) -> web.Response:
+    match_id = int(request.match_info["match_id"])
+    conn = request.app["conn_factory"]()
+    try:
+        # Fetch the match + advisory context. match_id -> source_id lookup.
+        row = conn.execute(
+            "SELECT a.source_id FROM match m JOIN advisory a ON a.id = m.advisory_id "
+            "WHERE m.id = ?", (match_id,),
+        ).fetchone()
+        if not row:
+            return web.Response(status=404, text=f"match not found: {match_id}")
+        source_id = row[0]
+        advisory = queries.advisory_context(conn, source_id)
+    finally:
+        conn.close()
+
+    if advisory is None:
+        return web.Response(status=500, text="advisory context missing")
+    match = next((m for m in advisory.matches if m.match_id == match_id), None)
+    if match is None:
+        return web.Response(status=500, text="match dropped between lookups")
+
+    referer = request.headers.get("Referer") or f"/a/{source_id}"
+    try:
+        payload = share.build_match_email(match, advisory, request.app["share_config"])
+        share.send_email(payload, request.app["share_config"])
+    except Exception as exc:
+        log.error("share_match: send failed: %r", exc)
+        sep = "&" if "?" in referer else "?"
+        raise web.HTTPSeeOther(f"{referer}{sep}sent_error={type(exc).__name__}")
+
+    sep = "&" if "?" in referer else "?"
+    raise web.HTTPSeeOther(f"{referer}{sep}sent=1")
+
+
+async def share_advisory_view(request: web.Request) -> web.Response:
+    source_id = request.match_info["source_id"]
+    conn = request.app["conn_factory"]()
+    try:
+        advisory = queries.advisory_context(conn, source_id)
+    finally:
+        conn.close()
+    if advisory is None:
+        return web.Response(status=404, text=f"advisory not found: {source_id}")
+
+    try:
+        payload = share.build_advisory_email(advisory, request.app["share_config"])
+        share.send_email(payload, request.app["share_config"])
+    except Exception as exc:
+        log.error("share_advisory: send failed: %r", exc)
+        raise web.HTTPSeeOther(f"/a/{source_id}?sent_error={type(exc).__name__}")
+    raise web.HTTPSeeOther(f"/a/{source_id}?sent=1")
+
+
 def build_app(
     *,
     conn_factory: Callable[[], sqlite3.Connection],
@@ -161,5 +215,7 @@ def build_app(
     app.router.add_get("/", index_view)
     app.router.add_get(r"/p/{owner:[^/]+}/{repo:[^/]+}", project_view)
     app.router.add_get(r"/a/{source_id:[A-Za-z0-9_\-]+}", advisory_view)
+    app.router.add_post(r"/share/match/{match_id:\d+}", share_match_view)
+    app.router.add_post(r"/share/advisory/{source_id:[A-Za-z0-9_\-]+}", share_advisory_view)
     app.router.add_static("/static/", STATIC_DIR, follow_symlinks=False)
     return app
