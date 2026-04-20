@@ -25,12 +25,17 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _make_env() -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         autoescape=select_autoescape(["html"]),
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    # Expose _ago so templates can render "seen" columns as relative time
+    # instead of raw unix timestamps. Matches the `if ago_label is defined`
+    # guard in index.html and future pages.
+    env.globals["ago_label"] = _ago
+    return env
 
 
 def _ago(ts: int | None, now: int | None = None) -> str:
