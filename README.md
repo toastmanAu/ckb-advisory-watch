@@ -59,7 +59,7 @@ Runs as a systemd user service on an **Orange Pi Zero 3** (Armbian / Ubuntu 24.0
 - **Phase 1** — Component DB: 75 projects seeded ✓; Cargo.lock parser ✓; npm / go.mod / pyproject parsers pending; GitHub walker pending
 - **Phase 2** ✓ Advisory ingest (OSV): bulk-zip fetcher with If-None-Match caching, 5 ecosystems (crates.io, npm, PyPI, Go, Maven), per-ecosystem error isolation, asyncio poll loop wired into `main.py`. GHSA / RustSec / PyPA direct pollers as freshness upgrades later.
 - **Phase 3** — Matching engine: version-range intersection, CVSS, dedup, manual allowlist
-- **Phase 4** — Outputs: browser dashboard ✓ (read-only, share-to-email); Telegram bot, vault sync, wyltekindustries page pending
+- **Phase 4** — Outputs: browser dashboard ✓ (read-only, share-to-email); Telegram pager ✓ (per-advisory, DM + channel); vault sync, wyltekindustries page pending
 
 ## Install (Zero 3)
 
@@ -92,6 +92,34 @@ URL structure:
 Share buttons on match rows and advisory pages send a structured email
 via Gmail SMTP to the address in `[share].recipient` — configure
 `smtp_user` and `smtp_password` (app password) in `config.toml`.
+
+## Wire the pager (Telegram)
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) → `/newbot` → save the HTTP API token.
+2. Start a chat with your new bot (`/start`) — this is your DM destination.
+3. Run a throwaway `curl` to get your DM chat_id:
+   ```bash
+   curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | python3 -m json.tool | grep '"id"'
+   ```
+   Look for the first `id` inside `"chat": { ... }`. That's your `chat_id`.
+4. (Optional) To also post to a private channel, add the bot as admin,
+   then have someone post `/start@your_bot_name` in the channel. Re-run
+   step 3 and find the `id` whose value is a large negative integer
+   starting with `-100`. That's the `channel_id`.
+5. Edit `config.toml`:
+   ```toml
+   [outputs.telegram]
+   enabled      = true
+   bot_token    = "<bot-token>"
+   chat_id      = "<your DM id>"
+   channel_id   = "<channel id, optional>"
+   min_severity = "medium"
+   ```
+6. `systemctl --user restart ckb-advisory-watch` (or just re-run
+   `python -m agent.main` locally).
+
+First run silently *baselines* the current backlog — you won't get 250
+notifications. Only genuinely new advisories after that point fire pings.
 
 ## License
 

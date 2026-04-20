@@ -24,6 +24,7 @@ from aiohttp import web
 
 from agent.dashboard import server as dashboard_server
 from agent.dashboard import share as dashboard_share
+from agent.output.telegram import telegram_poll_loop
 
 try:
     import tomllib  # Python 3.11+
@@ -199,6 +200,7 @@ async def run(config: dict, schema_path: Path) -> None:
                 osv_poll_loop(conn, osv_client, ecosystems, osv_interval, stop),
                 github_poll_loop(conn, gh_client, github_interval, stop),
                 start_dashboard(config, data_dir, stop),
+                telegram_poll_loop(conn, config, stop),
             )
         finally:
             log.info("ckb-advisory-watch stopped")
