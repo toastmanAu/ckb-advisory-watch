@@ -123,6 +123,29 @@ def _parse_csv_set(s: str | None) -> set[str] | None:
     return {v.strip() for v in s.split(",") if v.strip()}
 
 
+async def advisory_view(request: web.Request) -> web.Response:
+    source_id = request.match_info["source_id"]
+    conn = request.app["conn_factory"]()
+    try:
+        landing = queries.landing_data(conn)
+        ctx = queries.advisory_context(conn, source_id)
+    finally:
+        conn.close()
+    if ctx is None:
+        return web.Response(status=404, text=f"advisory not found: {source_id}")
+
+    template = request.app["jinja"].get_template("advisory.html")
+    html = template.render(
+        kpis=landing.kpis,
+        hostname=request.app["hostname"],
+        last_osv_ingest_label=_ago(landing.last_osv_ingest),
+        last_walk_label=_ago(landing.last_github_walk),
+        flash=_flash_from_query(request),
+        advisory=ctx,
+    )
+    return web.Response(text=html, content_type="text/html")
+
+
 def build_app(
     *,
     conn_factory: Callable[[], sqlite3.Connection],
@@ -137,5 +160,6 @@ def build_app(
 
     app.router.add_get("/", index_view)
     app.router.add_get(r"/p/{owner:[^/]+}/{repo:[^/]+}", project_view)
+    app.router.add_get(r"/a/{source_id:[A-Za-z0-9_\-]+}", advisory_view)
     app.router.add_static("/static/", STATIC_DIR, follow_symlinks=False)
     return app

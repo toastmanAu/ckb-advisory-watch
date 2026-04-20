@@ -99,3 +99,19 @@ async def test_project_page_filters_by_severity_query_param(tmp_path, share_conf
         b2 = await r2.text()
     assert "GHSA-crit" in b1 and "GHSA-low-extra" in b1
     assert "GHSA-crit" in b2 and "GHSA-low-extra" not in b2
+
+
+async def test_advisory_page_shows_affected_projects(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/a/GHSA-crit")
+        assert resp.status == 200
+        body = await resp.text()
+    assert "GHSA-crit" in body
+    assert "a/b" in body  # project slug appears
+    assert "libgit2-sys" in body
+
+
+async def test_advisory_page_404_for_unknown(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/a/GHSA-not-real")
+    assert resp.status == 404

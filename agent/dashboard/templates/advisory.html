@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ advisory.source_id }} · ckb-advisory-watch{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="mono" style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+    <a href="/">← dashboard</a> / advisory
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+    <span class="pill {{ advisory.severity or 'unknown' }}">
+      {{ (advisory.severity or 'unknown')|upper }}
+    </span>
+    {% if advisory.cvss %}<span class="mono" style="font-weight:700">CVSS {{ '%.1f'|format(advisory.cvss) }}</span>{% endif %}
+  </div>
+  <h1 class="mono" style="color:var(--link)">{{ advisory.source_id }}</h1>
+  <p style="color:var(--text-muted);margin:4px 0 12px">{{ advisory.summary }}</p>
+
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    {% for ref in advisory.references %}
+      <a class="mono" style="background:var(--bg-alt);padding:4px 10px;border-radius:2px;font-size:11px"
+         href="{{ ref.url }}">{{ ref.url|truncate(60) }} ↗</a>
+    {% endfor %}
+    {% for cve in advisory.cve_ids %}
+      <a class="mono" style="background:var(--bg-alt);padding:4px 10px;border-radius:2px;font-size:11px"
+         href="https://nvd.nist.gov/vuln/detail/{{ cve }}">{{ cve }} ↗</a>
+    {% endfor %}
+  </div>
+
+  <div style="padding:12px 0 14px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+    <strong style="font-size:12px">AFFECTS {{ advisory.matches|length }} PROJECT(S)</strong>
+    <form method="POST" action="/share/advisory/{{ advisory.source_id }}" style="margin-left:auto">
+      <button type="submit" class="share">📤 share to inbox</button>
+    </form>
+  </div>
+
+  <table class="data" style="margin-top:14px">
+    <thead><tr>
+      <th>project</th>
+      <th>affected</th>
+      <th style="width:90px">fixed in</th>
+    </tr></thead>
+    <tbody>
+      {% for m in advisory.matches %}
+      <tr>
+        <td class="proj"><a href="/p/{{ m.project_slug }}">{{ m.project_slug }}</a></td>
+        <td>{{ m.dep_name }}@{{ m.dep_version }}</td>
+        <td style="color:var(--sev-low)">{{ m.fixed_in or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if advisory.details %}
+  <details style="margin-top:20px">
+    <summary style="cursor:pointer;color:var(--text-muted);font-size:12px">show full advisory details</summary>
+    <pre style="white-space:pre-wrap;background:var(--bg-alt);padding:12px;margin-top:8px;border-radius:3px;font-size:11px;color:var(--text-muted)">{{ advisory.details }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}
