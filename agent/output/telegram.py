@@ -315,3 +315,175 @@ def baseline_if_first_run(
             (key, now),
         )
     return inserted
+
+
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+
+from agent.dashboard import queries as dash_queries  # noqa: E402
+
+log = logging.getLogger(__name__)
+
+
+async def _emit_rows_for_advisory(
+    conn: sqlite3.Connection,
+    advisory_id: int,
+    sub_channel: str,
+    match_ids: list[int],
+    artifact_path: str,
+) -> None:
+    """Insert one emission row per match_id in a single transaction."""
+    now = int(time.time())
+    with conn:
+        conn.executemany(
+            """
+            INSERT INTO emission (match_id, channel, emitted_at, artifact_path)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(match_id, channel) DO UPDATE SET
+                artifact_path = excluded.artifact_path,
+                emitted_at = excluded.emitted_at
+            """,
+            [(mid, sub_channel, now, artifact_path) for mid in match_ids],
+        )
+
+
+def _unemitted_match_ids_for_advisory(
+    conn: sqlite3.Connection,
+    advisory_id: int,
+    sub_channel: str,
+    min_level: int,
+) -> list[int]:
+    rows = conn.execute(
+        f"""
+        SELECT m.id FROM match m
+        JOIN advisory a ON a.id = m.advisory_id
+        LEFT JOIN emission e
+          ON e.match_id = m.id AND e.channel = ?
+        WHERE e.id IS NULL
+          AND m.advisory_id = ?
+          AND m.state = 'open'
+          AND {_SEVERITY_CASE_SQL} >= ?
+        """,
+        (sub_channel, advisory_id, min_level),
+    ).fetchall()
+    return [int(r[0]) for r in rows]
+
+
+async def _process_subchannel_once(
+    conn: sqlite3.Connection,
+    client: httpx.AsyncClient,
+    bot_token: str,
+    chat_id: str,
+    sub_channel: str,
+    min_level: int,
+    config: dict,
+    rendered_bodies: dict[int, tuple[str, dict]],
+) -> None:
+    """Process one sub-channel for one poll tick: baseline + dispatch.
+
+    `rendered_bodies` is the per-tick cache of format_message results so we
+    render each advisory at most once even if both sub-channels target it.
+    """
+    if not chat_id:
+        return
+    # Baseline if this is the first run for this sub-channel.
+    baselined = baseline_if_first_run(conn, sub_channel, min_level)
+    if baselined:
+        log.info("telegram.%s: baseline sealed %d existing matches", sub_channel, baselined)
+
+    # Iterate advisories that still need a send.
+    advisories = _unemitted_advisories_above(conn, sub_channel, min_level)
+    for advisory_id, source_id in advisories:
+        unemitted_match_ids = _unemitted_match_ids_for_advisory(
+            conn, advisory_id, sub_channel, min_level,
+        )
+        if not unemitted_match_ids:
+            continue
+
+        # Render once, reuse across sub-channels within the tick.
+        if advisory_id in rendered_bodies:
+            html_body, keyboard = rendered_bodies[advisory_id]
+        else:
+            ctx = dash_queries.advisory_context(conn, source_id)
+            if ctx is None:
+                log.warning("telegram: advisory_context(%s) returned None — skipping", source_id)
+                continue
+            filtered = [m for m in ctx.matches if m.match_id in set(unemitted_match_ids)]
+            if not filtered:
+                continue
+            html_body, keyboard = format_message(ctx, filtered, config)
+            rendered_bodies[advisory_id] = (html_body, keyboard)
+
+        try:
+            message_id = await send_message(
+                client, bot_token=bot_token, chat_id=chat_id,
+                html_body=html_body, inline_keyboard=keyboard,
+            )
+        except TransientSendError as exc:
+            if exc.retry_after:
+                log.warning("telegram.%s: rate limited, sleeping %ds", sub_channel, exc.retry_after)
+                await asyncio.sleep(exc.retry_after)
+            else:
+                log.warning("telegram.%s: transient error: %r", sub_channel, exc)
+            # Leave emission rows uninserted — retry on next tick.
+            return
+        except PermanentSendError as exc:
+            log.error("telegram.%s: permanent send error for %s: %r", sub_channel, source_id, exc)
+            await _emit_rows_for_advisory(
+                conn, advisory_id, sub_channel, unemitted_match_ids,
+                f"error:{str(exc)[:200]}",
+            )
+            continue
+
+        await _emit_rows_for_advisory(
+            conn, advisory_id, sub_channel, unemitted_match_ids, str(message_id),
+        )
+        log.info(
+            "telegram.%s: sent %s (%d matches) message_id=%d",
+            sub_channel, source_id, len(unemitted_match_ids), message_id,
+        )
+
+
+async def telegram_poll_loop(
+    conn: sqlite3.Connection,
+    config: dict,
+    stop: asyncio.Event,
+) -> None:
+    """Third coroutine alongside osv_poll_loop / github_poll_loop. Each tick
+    iterates every configured sub-channel, processing baseline + unemitted
+    advisories independently. Sleeps `poll.telegram` seconds between ticks,
+    interruptible via the shared `stop` event."""
+    interval = float((config.get("poll") or {}).get("telegram", 30))
+    while not stop.is_set():
+        tele = (config.get("outputs") or {}).get("telegram") or {}
+        enabled = bool(tele.get("enabled", False))
+        bot_token = tele.get("bot_token") or ""
+        chat_id = tele.get("chat_id") or ""
+        channel_id = tele.get("channel_id") or ""
+        min_sev = tele.get("min_severity") or "medium"
+        min_level = SEVERITY_LEVEL.get(min_sev.lower(), SEVERITY_LEVEL["medium"])
+
+        if not enabled:
+            log.debug("telegram: disabled, sleeping")
+        elif not bot_token:
+            log.warning("telegram: enabled but bot_token empty, sleeping")
+        elif not chat_id and not channel_id:
+            log.warning("telegram: enabled but no destinations configured, sleeping")
+        else:
+            rendered: dict[int, tuple[str, dict]] = {}
+            async with httpx.AsyncClient() as client:
+                if chat_id:
+                    await _process_subchannel_once(
+                        conn, client, bot_token, chat_id,
+                        SUBCH_DM, min_level, config, rendered,
+                    )
+                if channel_id:
+                    await _process_subchannel_once(
+                        conn, client, bot_token, channel_id,
+                        SUBCH_CHANNEL, min_level, config, rendered,
+                    )
+
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
