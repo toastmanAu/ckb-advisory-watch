@@ -26,6 +26,37 @@ SEVERITY_ORDER_CASE = (
     "ELSE 0 END"
 )
 
+_MATCH_SELECT = """
+    SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
+           p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
+           (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
+              FROM advisory_affects aa
+              WHERE aa.advisory_id = a.id
+                AND aa.ecosystem = pd.ecosystem
+                AND aa.name = pd.name
+                AND aa.fixed_in IS NOT NULL),
+           m.first_matched
+    FROM match m
+    JOIN advisory a ON a.id = m.advisory_id
+    JOIN project p  ON p.id = m.project_id
+    JOIN project_dep pd ON pd.id = m.project_dep_id
+"""
+
+
+def _fetch_match_rows(
+    conn: sqlite3.Connection,
+    where: str,
+    params: tuple,
+    order_by: str,
+    limit: int | None = None,
+) -> list[MatchRow]:
+    sql = f"{_MATCH_SELECT} WHERE {where} ORDER BY {order_by}"
+    bind: tuple = params
+    if limit is not None:
+        sql += " LIMIT ?"
+        bind = params + (limit,)
+    return [MatchRow(*r) for r in conn.execute(sql, bind).fetchall()]
+
 
 @dataclass(frozen=True)
 class MatchRow:
@@ -71,29 +102,13 @@ def _kpis(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def _triage(conn: sqlite3.Connection, limit: int) -> list[MatchRow]:
-    rows = conn.execute(
-        f"""
-        SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
-               p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
-               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
-                  FROM advisory_affects aa
-                  WHERE aa.advisory_id = a.id
-                    AND aa.ecosystem = pd.ecosystem
-                    AND aa.name = pd.name
-                    AND aa.fixed_in IS NOT NULL) AS fixed_in,
-               m.first_matched
-        FROM match m
-        JOIN advisory a ON a.id = m.advisory_id
-        JOIN project p ON p.id = m.project_id
-        JOIN project_dep pd ON pd.id = m.project_dep_id
-        WHERE m.state = 'open'
-          AND a.severity IN ('critical', 'high')
-        ORDER BY {SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    return [MatchRow(*r) for r in rows]
+    return _fetch_match_rows(
+        conn,
+        where="m.state = 'open' AND a.severity IN ('critical', 'high')",
+        params=(),
+        order_by=f"{SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC",
+        limit=limit,
+    )
 
 
 def _top_projects(conn: sqlite3.Connection, limit: int) -> list[tuple[str, int]]:
@@ -210,27 +225,6 @@ def project_context(
         where.append(f"pd.ecosystem IN ({placeholders})")
         params.extend(sorted(ecosystem_filter))
 
-    match_rows = conn.execute(
-        f"""
-        SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
-               p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
-               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
-                  FROM advisory_affects aa
-                  WHERE aa.advisory_id = a.id
-                    AND aa.ecosystem = pd.ecosystem
-                    AND aa.name = pd.name
-                    AND aa.fixed_in IS NOT NULL),
-               m.first_matched
-        FROM match m
-        JOIN advisory a ON a.id = m.advisory_id
-        JOIN project p ON p.id = m.project_id
-        JOIN project_dep pd ON pd.id = m.project_dep_id
-        WHERE {' AND '.join(where)}
-        ORDER BY {SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC
-        """,
-        tuple(params),
-    ).fetchall()
-
     return ProjectContext(
         project_id=pid,
         slug=slug,
@@ -239,7 +233,12 @@ def project_context(
         default_branch=branch,
         last_sha=last_sha,
         last_checked=last_checked,
-        matches=[MatchRow(*r) for r in match_rows],
+        matches=_fetch_match_rows(
+            conn,
+            where=" AND ".join(where),
+            params=tuple(params),
+            order_by=f"{SEVERITY_ORDER_CASE} DESC, a.cvss DESC, m.first_matched DESC",
+        ),
     )
 
 
@@ -261,31 +260,10 @@ def advisory_context(
 
     # first fixed_in we see for this advisory (intentionally broad — any package)
     fixed_row = conn.execute(
-        "SELECT fixed_in FROM advisory_affects WHERE advisory_id = ? AND fixed_in IS NOT NULL LIMIT 1",
+        "SELECT fixed_in FROM advisory_affects WHERE advisory_id = ? AND fixed_in IS NOT NULL ORDER BY id LIMIT 1",
         (aid,),
     ).fetchone()
     fixed_in = fixed_row[0] if fixed_row else None
-
-    match_rows = conn.execute(
-        f"""
-        SELECT m.id, a.id, a.source_id, a.severity, a.cvss, a.summary,
-               p.slug, p.display_name, pd.ecosystem, pd.name, pd.version,
-               (SELECT GROUP_CONCAT(aa.fixed_in, ', ')
-                  FROM advisory_affects aa
-                  WHERE aa.advisory_id = a.id
-                    AND aa.ecosystem = pd.ecosystem
-                    AND aa.name = pd.name
-                    AND aa.fixed_in IS NOT NULL),
-               m.first_matched
-        FROM match m
-        JOIN advisory a ON a.id = m.advisory_id
-        JOIN project p ON p.id = m.project_id
-        JOIN project_dep pd ON pd.id = m.project_dep_id
-        WHERE m.state = 'open' AND a.id = ?
-        ORDER BY p.slug ASC
-        """,
-        (aid,),
-    ).fetchall()
 
     return AdvisoryContext(
         advisory_id=aid,
@@ -298,5 +276,10 @@ def advisory_context(
         cve_ids=json.loads(cve_json) if cve_json else [],
         references=json.loads(refs_json) if refs_json else [],
         fixed_in=fixed_in,
-        matches=[MatchRow(*r) for r in match_rows],
+        matches=_fetch_match_rows(
+            conn,
+            where="m.state = 'open' AND a.id = ?",
+            params=(aid,),
+            order_by="p.slug ASC, m.first_matched DESC",
+        ),
     )
