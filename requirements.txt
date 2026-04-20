@@ -3,3 +3,5 @@ tomli>=2.0; python_version < "3.11"
 packaging>=24.0
 pyyaml>=6.0
 cvss
+aiohttp>=3.10
+jinja2>=3.1
