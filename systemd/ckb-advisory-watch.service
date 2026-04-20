@@ -10,9 +10,12 @@ ExecStart=%h/ckb-advisory-watch/.venv/bin/python -m agent.main --config %h/ckb-a
 Restart=on-failure
 RestartSec=30s
 
-# Soft resource caps — the Zero 3 has 3.8 GiB and runs a desktop.
-MemoryHigh=512M
-MemoryMax=1G
+# Soft resource caps — the Zero 3 has 3.8 GiB. Cold npm ingest peaks at
+# ~600 MB (192 MB zip + parsed records + SQLite WAL), so the original
+# 512M high cap pushed us hard into swap. 1.5G soft / 3G hard leaves
+# headroom for the desktop if one runs alongside.
+MemoryHigh=1500M
+MemoryMax=3G
 CPUQuota=80%
 
 [Install]
