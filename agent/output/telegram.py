@@ -144,3 +144,83 @@ def format_message(
 
     keyboard: dict[str, Any] = {"inline_keyboard": [buttons] if buttons else []}
     return body, keyboard
+
+
+import httpx  # noqa: E402 — stdlib-ish, after domain code block
+
+TELEGRAM_API = "https://api.telegram.org"
+
+
+class TransientSendError(Exception):
+    """Transient Telegram failure — caller should retry on next tick.
+
+    `retry_after` is the integer seconds to wait before retrying (present
+    on 429 responses via Telegram's retry_after parameter). None for network
+    errors and 5xx responses.
+    """
+    def __init__(self, message: str, retry_after: int | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class PermanentSendError(Exception):
+    """Non-retryable Telegram failure — chat not found, bad HTML, bad token.
+
+    Caller should mark the emission as 'error' to prevent infinite retries
+    and surface the error for operator intervention.
+    """
+
+
+async def send_message(
+    client: httpx.AsyncClient,
+    *,
+    bot_token: str,
+    chat_id: str,
+    html_body: str,
+    inline_keyboard: dict,
+) -> int:
+    """POST sendMessage, return the Telegram message_id on success.
+
+    Raises TransientSendError on 429, 5xx, network errors (caller retries).
+    Raises PermanentSendError on 400 (bad chat, bad HTML) or non-ok body.
+    """
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": html_body,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if inline_keyboard.get("inline_keyboard"):
+        payload["reply_markup"] = inline_keyboard
+
+    url = f"{TELEGRAM_API}/bot{bot_token}/sendMessage"
+    try:
+        resp = await client.post(url, json=payload, timeout=30.0)
+    except httpx.HTTPError as exc:
+        raise TransientSendError(f"network error: {exc!r}") from exc
+
+    if resp.status_code == 429:
+        try:
+            retry_after = int(resp.json().get("parameters", {}).get("retry_after", 1))
+        except Exception:
+            retry_after = 1
+        raise TransientSendError(f"rate limited; retry_after={retry_after}", retry_after=retry_after)
+
+    if 500 <= resp.status_code < 600:
+        raise TransientSendError(f"server error {resp.status_code}: {resp.text[:200]}")
+
+    if resp.status_code == 400:
+        try:
+            desc = resp.json().get("description", "bad request")
+        except Exception:
+            desc = resp.text[:200]
+        raise PermanentSendError(f"400: {desc}")
+
+    if resp.status_code != 200:
+        raise PermanentSendError(f"unexpected status {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    if not data.get("ok"):
+        raise PermanentSendError(f"api returned ok=false: {data.get('description', '<no desc>')}")
+
+    return int(data["result"]["message_id"])
