@@ -17,13 +17,13 @@ def open_db(path: Path, schema: Path) -> sqlite3.Connection:
     # connection. Safe because our single event loop naturally serializes
     # writes — no two tasks ever hold the conn concurrently.
     conn = sqlite3.connect(path, check_same_thread=False)
-    # busy_timeout=10s: when another connection holds the file-level write
-    # lock (e.g. ingest worker thread mid-transaction), a second writer
-    # (walker, matcher) waits up to 10s for the lock instead of failing
-    # fast with "database is locked". Paired with batched ingest so the
-    # worker doesn't hold the lock for more than a couple of seconds at
-    # a time.
-    conn.execute("PRAGMA busy_timeout = 10000")
+    # busy_timeout=60s: matches the worker-thread timeouts in walker/
+    # matcher/osv. An OSV batch of 1000 upserts can hold the file-level
+    # write lock for ~5-10s on a Pi Zero 3 SD card; 10s was too tight and
+    # caused "database is locked" on the main-loop writers (telegram
+    # emission inserts, etc.) during heavy ingest. 60s spans a full batch
+    # plus the sub-second inter-batch gap, virtually guaranteeing success.
+    conn.execute("PRAGMA busy_timeout = 60000")
     conn.executescript(schema.read_text())
     return conn
 

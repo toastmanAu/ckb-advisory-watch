@@ -138,7 +138,9 @@ def run_matcher(
     within asyncio.to_thread."""
     db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     thread_conn = sqlite3.connect(db_path)
-    thread_conn.execute("PRAGMA busy_timeout = 10000")
+    # 60s: same reasoning as walker._apply — must span a full OSV ingest
+    # batch so the matcher's own pass 2 inserts don't race-fail against it.
+    thread_conn.execute("PRAGMA busy_timeout = 60000")
     try:
         rows = thread_conn.execute(
             """

@@ -172,7 +172,11 @@ async def walk_project(
 
     def _apply() -> int:
         thread_conn = sqlite3.connect(db_path)
-        thread_conn.execute("PRAGMA busy_timeout = 10000")
+        # 60s: must span a full OSV ingest batch (up to ~10s hold) plus
+        # any inter-batch gap. 10s was too tight — walker raced every
+        # batch and missed the ~0.5s gap most of the time during npm
+        # re-ingest, leaving project rows stuck with NULL last_sha.
+        thread_conn.execute("PRAGMA busy_timeout = 60000")
         total_local = 0
         try:
             with thread_conn:

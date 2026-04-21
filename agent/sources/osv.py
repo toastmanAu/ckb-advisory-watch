@@ -417,7 +417,10 @@ async def ingest_ecosystem(
 
     def _apply() -> int:
         thread_conn = sqlite3.connect(db_path)
-        thread_conn.execute("PRAGMA busy_timeout = 10000")
+        # 60s: symmetric with walker/matcher. OSV doesn't usually race
+        # itself, but if a large ingest overlaps a concurrent tick (e.g.
+        # on restart with two stale ETags) the 10s timeout was too tight.
+        thread_conn.execute("PRAGMA busy_timeout = 60000")
         total = 0
         try:
             batch: list[dict[str, Any]] = []
