@@ -371,19 +371,37 @@ async def ingest_ecosystem(
 
     The sync upsert loop runs inside asyncio.to_thread so the main event
     loop stays responsive during large ingests (npm's 217k records used
-    to block the dashboard HTTP accept for ~20 min on ARM). See task #49."""
+    to block the dashboard HTTP accept for ~20 min on ARM). See task #49.
+
+    The worker thread opens its OWN SQLite connection — separate from the
+    main loop's shared conn — so a concurrent walker/matcher write on the
+    main thread can't collide with the big ingest transaction. (SQLite
+    permits multiple connections to one DB file in WAL mode; each can hold
+    its own transaction independently.) Observed symptom before this fix:
+    `OperationalError('cannot commit transaction - SQL statements in
+    progress')` in the walker when it tried to upsert project_dep rows
+    while npm ingest was still running."""
     state_key = f"osv.etag.{ecosystem}"
     prev_etag = read_poller_state(conn, state_key)
     result = await fetch_ecosystem(client, ecosystem, prev_etag)
     if not result.modified:
         return 0
 
+    # Resolve the on-disk path of the main-thread connection so the worker
+    # thread can open its own connection to the same file. PRAGMA returns
+    # rows (seq, name, file); seq=0 is the main attached database.
+    db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+
     def _apply() -> int:
-        with conn:  # BEGIN / COMMIT (or ROLLBACK on exception)
-            for raw in result.records:
-                upsert_advisory(conn, raw)
-            if result.etag:
-                _write_poller_state(conn, state_key, result.etag)
+        thread_conn = sqlite3.connect(db_path)
+        try:
+            with thread_conn:
+                for raw in result.records:
+                    upsert_advisory(thread_conn, raw)
+                if result.etag:
+                    _write_poller_state(thread_conn, state_key, result.etag)
+        finally:
+            thread_conn.close()
         return len(result.records)
 
     return await asyncio.to_thread(_apply)
