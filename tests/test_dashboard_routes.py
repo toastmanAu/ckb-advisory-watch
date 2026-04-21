@@ -174,3 +174,11 @@ async def test_advisory_share_button_is_post_form_in_private_mode(tmp_path, shar
         body = await resp.text()
     assert 'action="/share/advisory/GHSA-crit"' in body
     assert "mailto:" not in body
+
+
+async def test_project_share_button_is_post_form_in_private_mode(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/p/a/b")
+        body = await resp.text()
+    assert 'action="/share/match/' in body
+    assert "mailto:" not in body
