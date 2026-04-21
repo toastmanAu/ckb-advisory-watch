@@ -29,7 +29,12 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # followed by 36 base62-ish chars.
     ("github_token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36}")),
     # Telegram bot tokens: <bot_id>:<35 base64url chars>
-    ("telegram_bot_token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")),
+    # Use (?<!\d) instead of leading \b because common real-world leak format
+    # is a Telegram API URL (bot<id>:<token>), where the digit is preceded by
+    # 't' (a word char), so \b would not fire. (?<!\d) allows 'bot1234567890:...'
+    # (digit preceded by letter, not another digit) while still rejecting
+    # id-embedded false positives like 'userid12345678:...'.
+    ("telegram_bot_token", re.compile(r"(?<!\d)\d{8,10}:[A-Za-z0-9_-]{35}\b")),
     # Literal Telegram chat_id from config.example.toml — an exact-match
     # belt-and-suspenders: if someone edits a template to expose a chat_id,
     # the number itself trips the scan regardless of context.
@@ -38,7 +43,14 @@ _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # interpolated the whole config section.
     ("secret_key_name", re.compile(r"\b(api_token|smtp_password|bot_token)\s*[:=]")),
     # Cloudflare API tokens: 40 hex/alnum chars after a recognizable prefix
-    ("cloudflare_token", re.compile(r"CLOUDFLARE_API_TOKEN\s*[:=]\s*\S+")),
+    # Exclude common documentation placeholders: 'your-token-here',
+    # '${CLOUDFLARE_API_TOKEN}', '<fill-me-in>', 'example', 'xxx', or
+    # empty-quoted pairs. Real tokens (40+ random hex chars) still match.
+    ("cloudflare_token", re.compile(
+        r"CLOUDFLARE_API_TOKEN\s*[:=]\s*"
+        r"(?!(?:your-|placeholder|xxx|<|\$\{|example)|[\"']\s*[\"'])"
+        r"\S+"
+    )),
 ]
 
 # Only scan these extensions. PNG/favicon bytes would false-positive.
@@ -46,8 +58,10 @@ _SCAN_EXTENSIONS = {".html", ".htm", ".txt", ".xml", ".json", ".js", ".css"}
 
 
 class SecretScanFailed(Exception):
-    """Raised when scan_for_secrets is called with raise_on_find=True and
-    at least one SecretFound is emitted."""
+    """Reserved for callers that want to convert scan_for_secrets' returned
+    findings list into an exception. `scan_for_secrets` itself returns the
+    list and never raises — the CLI (Task 7) is responsible for deciding
+    whether to raise, log+abort, or otherwise act on findings."""
 
 
 def scan_for_secrets(root: Path) -> list[SecretFound]:
