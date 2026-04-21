@@ -64,3 +64,32 @@ smtp_host = "smtp.gmail.com"
 smtp_port = 465
 smtp_user = ""
 smtp_password = ""
+
+# ----------------------------------------------------------------------
+# Public static mirror — optional. When enabled, `python -m agent.mirror`
+# generates a static HTML snapshot of the dashboard and deploys it to
+# Cloudflare Pages via Wrangler Direct Upload. Disabled by default; the
+# private dashboard is unaffected.
+#
+# Prerequisites on the host running the mirror:
+#   sudo apt install nodejs npm
+#   sudo npm install -g wrangler
+#   wrangler --version
+#
+# Obtain the api_token from Cloudflare dashboard:
+#   My Profile → API Tokens → Create Token → "Custom token"
+#   Permissions: Account → Cloudflare Pages → Edit
+#                User → User Details → Read
+#   Scope: the account hosting your Pages project.
+#
+# account_id: copy from any page under the account in the Cloudflare UI
+# (right sidebar) or `wrangler whoami`.
+# ----------------------------------------------------------------------
+[outputs.public_mirror]
+enabled = false
+project_name = "ckb-advisories"
+api_token = ""
+account_id = ""
+min_severity = "medium"   # critical|high|medium|low
+out_dir = "/tmp/mirror-out"
+base_url = "https://advisories.wyltekindustries.com"

@@ -76,6 +76,85 @@ systemctl --user daemon-reload
 systemctl --user enable --now ckb-advisory-watch
 ```
 
+## Publishing the public mirror
+
+The mirror is an unlisted static HTML snapshot of the dashboard, refreshed
+hourly to `advisories.wyltekindustries.com` via Cloudflare Pages.
+Share buttons become `mailto:` links. Severity floor: `medium`+ by default.
+
+### One-time setup (Pi)
+
+1. **Install Node + Wrangler**
+   ```bash
+   sudo apt install -y nodejs npm
+   sudo npm install -g wrangler
+   ```
+
+2. **Create Cloudflare project (via dashboard UI)**
+   - Pages → Create a project → Direct Upload
+   - Name: "ckb-advisories" (or whatever you set in `project_name`)
+
+3. **Add custom domain (via dashboard UI)**
+   - Inside the project: Custom domains → Add
+   - Domain: advisories.wyltekindustries.com
+   - Follow the CNAME prompt (DNS lands in your wyltekindustries zone)
+
+4. **Issue API token (via dashboard UI)**
+   - My Profile → API Tokens → Create Token → Custom token
+   - Permissions:
+     - Account → Cloudflare Pages → Edit
+     - User → User Details → Read
+   - Scope: single account
+
+5. **Populate config.toml**
+   ```toml
+   [outputs.public_mirror]
+   enabled = true
+   api_token = "<token from step 4>"
+   account_id = "<copy from dashboard sidebar>"
+   ```
+
+6. **Smoke-test a render locally (no deploy)**
+   ```bash
+   ~/.venv/bin/python -c "
+   import sqlite3
+   from pathlib import Path
+   from agent.mirror.render import render_all
+   conn = sqlite3.connect('file:data/state.db?mode=ro', uri=True)
+   print(render_all(conn, Path('/tmp/mirror-smoke'), severity_floor=('critical','high','medium')))
+   "
+   ls /tmp/mirror-smoke   # expect index.html, p/, a/, static/
+   ```
+
+7. **Full end-to-end (runs wrangler)**
+   ```bash
+   ~/.venv/bin/python -m agent.mirror --config config.toml
+   ```
+
+8. **Install the hourly timer**
+   ```bash
+   cp systemd/ckb-mirror.service systemd/ckb-mirror.timer ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now ckb-mirror.timer
+   systemctl --user list-timers ckb-mirror.timer
+   ```
+
+### Verifying the deploy
+
+After step 7 or after the first timer fire:
+
+- `journalctl --user -u ckb-mirror.service -n 50` — look for "mirror tick complete"
+- `curl -s -o /dev/null -w '%{http_code}\n' https://advisories.wyltekindustries.com/` — expect `200`
+- Click a 📤 link on an advisory page — your mail client should open with
+  the subject pre-filled.
+
+### Disabling
+
+Flip `[outputs.public_mirror].enabled = false` in `config.toml`. The timer
+will keep firing but the CLI logs "disabled" and exits 0 immediately.
+Cloudflare Pages retains the last successful deploy until you delete the
+project — no TTL on static uploads.
+
 ## Open the dashboard
 
 Once the service is running:
