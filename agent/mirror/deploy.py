@@ -6,6 +6,7 @@ a non-zero exit so the systemd timer's journalctl tail shows the hit."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -88,3 +89,54 @@ def scan_for_secrets(root: Path) -> list[SecretFound]:
                         matched_text=m.group(0)[:80],
                     ))
     return findings
+
+
+class DeployError(Exception):
+    """Deploy failed for a surfaceable reason — wrangler non-zero exit,
+    wrangler missing from PATH, etc. Caller prints exc and exits 1."""
+
+
+def deploy_via_wrangler(
+    *,
+    out_dir: Path,
+    project_name: str,
+    api_token: str,
+    account_id: str,
+) -> None:
+    """Shell to `wrangler pages deploy` with Direct Upload.
+
+    Sets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` env vars (per
+    wrangler's documented auth path — no wrangler.toml needed for a
+    one-shot upload). Uses `--branch=main` to mark this the production
+    deploy (not a preview), and `--commit-dirty=true` to suppress the
+    no-git-repo warning since we're uploading a throwaway /tmp dir."""
+    argv = [
+        "wrangler", "pages", "deploy", str(out_dir),
+        f"--project-name={project_name}",
+        "--branch=main",
+        "--commit-dirty=true",
+    ]
+    env = {
+        "CLOUDFLARE_API_TOKEN": api_token,
+        "CLOUDFLARE_ACCOUNT_ID": account_id,
+        # Preserve PATH so wrangler (installed under /usr/local/bin or
+        # ~/.nvm/.../bin) is findable.
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/tmp"),
+    }
+    try:
+        result = subprocess.run(
+            argv, env=env, capture_output=True, text=True, timeout=300,
+        )
+    except FileNotFoundError as exc:
+        raise DeployError(
+            "wrangler not found on PATH. Install: npm install -g wrangler"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise DeployError(f"wrangler timed out after 300s: {exc!r}") from exc
+
+    if result.returncode != 0:
+        raise DeployError(
+            f"wrangler exited {result.returncode}: {result.stderr.strip() or result.stdout.strip()}"
+        )
+    log.info("wrangler deploy OK: %s", result.stdout.strip()[:200])

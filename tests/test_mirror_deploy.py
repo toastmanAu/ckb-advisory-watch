@@ -113,3 +113,79 @@ def test_scan_ignores_non_utf8_html_file(tmp_path):
     # Should not raise; the file gets skipped via UnicodeDecodeError path
     findings = scan_for_secrets(tmp_path)
     assert findings == []
+
+
+def test_deploy_via_wrangler_happy_path(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from agent.mirror.deploy import DeployError, deploy_via_wrangler
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    (out_dir / "index.html").write_text("<html></html>")
+
+    with patch("agent.mirror.deploy.subprocess.run") as run:
+        run.return_value = MagicMock(returncode=0, stdout="uploaded", stderr="")
+        deploy_via_wrangler(
+            out_dir=out_dir,
+            project_name="ckb-advisories",
+            api_token="test-token",
+            account_id="test-acct",
+        )
+
+    assert run.called
+    args, kwargs = run.call_args
+    argv = args[0]
+    assert argv[0] == "wrangler"
+    assert "pages" in argv
+    assert "deploy" in argv
+    assert str(out_dir) in argv
+    assert "--project-name=ckb-advisories" in argv
+    assert "--branch=main" in argv
+    assert "--commit-dirty=true" in argv
+    env = kwargs["env"]
+    assert env["CLOUDFLARE_API_TOKEN"] == "test-token"
+    assert env["CLOUDFLARE_ACCOUNT_ID"] == "test-acct"
+
+
+def test_deploy_via_wrangler_failure_raises_with_stderr(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from agent.mirror.deploy import DeployError, deploy_via_wrangler
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    with patch("agent.mirror.deploy.subprocess.run") as run:
+        run.return_value = MagicMock(
+            returncode=1, stdout="", stderr="ERROR: 401 Unauthorized"
+        )
+        with pytest.raises(DeployError) as excinfo:
+            deploy_via_wrangler(
+                out_dir=out_dir,
+                project_name="ckb-advisories",
+                api_token="bad",
+                account_id="acct",
+            )
+        assert "401" in str(excinfo.value)
+
+
+def test_deploy_via_wrangler_missing_wrangler_binary_raises(tmp_path):
+    from unittest.mock import MagicMock, patch
+
+    from agent.mirror.deploy import DeployError, deploy_via_wrangler
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    with patch("agent.mirror.deploy.subprocess.run") as run:
+        run.side_effect = FileNotFoundError("wrangler")
+        with pytest.raises(DeployError) as excinfo:
+            deploy_via_wrangler(
+                out_dir=out_dir,
+                project_name="ckb-advisories",
+                api_token="t",
+                account_id="a",
+            )
+        assert "wrangler" in str(excinfo.value).lower()
+        assert "npm install" in str(excinfo.value)
