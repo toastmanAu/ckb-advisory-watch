@@ -1,0 +1,39 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+
+importers:
+  .:
+    dependencies:
+      lodash:
+        specifier: ^4.17.0
+        version: 4.17.21
+  packages/pkg-a:
+    dependencies:
+      '@local/shared':
+        specifier: workspace:*
+        version: link:../shared
+  packages/shared:
+    name: '@local/shared'
+
+packages:
+  'lodash@4.17.21':
+    resolution: {integrity: sha512-xxx}
+
+  '@babel/core@7.24.0':
+    resolution: {integrity: sha512-yyy}
+
+  'react@18.2.0(@types/react@18.0.0)':
+    resolution: {integrity: sha512-zzz}
+    peerDependencies:
+      '@types/react': '*'
+
+  '@testing-library/react@14.0.0(react@18.2.0)':
+    resolution: {integrity: sha512-aaa}
+
+  'some-pkg@2.1.0':
+    resolution: {integrity: sha512-bbb}
+
+  'react@18.2.0(@types/react@18.5.0)':
+    resolution: {integrity: sha512-zzz}

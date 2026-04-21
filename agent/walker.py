@@ -27,6 +27,7 @@ from agent.db import upsert_project_dep
 from agent.parsers.cargo import parse_cargo_lock
 from agent.parsers.go_sum import parse_go_sum
 from agent.parsers.npm import parse_package_lock
+from agent.parsers.pnpm import parse_pnpm_lock
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ GITHUB_RAW = "https://raw.githubusercontent.com"
 LOCKFILE_PARSERS: dict[str, tuple[str, Callable[[str], list[tuple[str, str]]]]] = {
     "Cargo.lock": ("crates.io", parse_cargo_lock),
     "package-lock.json": ("npm", parse_package_lock),
+    "pnpm-lock.yaml": ("npm", parse_pnpm_lock),
     "go.sum": ("Go", parse_go_sum),
 }
 
