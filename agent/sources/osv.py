@@ -392,13 +392,28 @@ async def ingest_ecosystem(
     # rows (seq, name, file); seq=0 is the main attached database.
     db_path = conn.execute("PRAGMA database_list").fetchone()[2]
 
+    # Break the upsert loop into small transactions so concurrent writers
+    # (walker, matcher) can acquire the file-level write lock in between.
+    # At ~1000 upserts per commit, the lock is held for ~1-3s on the Pi —
+    # shorter than the 10s busy_timeout other writers retry with.
+    BATCH_SIZE = 1000
+
     def _apply() -> int:
         thread_conn = sqlite3.connect(db_path)
+        thread_conn.execute("PRAGMA busy_timeout = 10000")
         try:
-            with thread_conn:
-                for raw in result.records:
-                    upsert_advisory(thread_conn, raw)
-                if result.etag:
+            records = result.records
+            for start in range(0, len(records), BATCH_SIZE):
+                batch = records[start : start + BATCH_SIZE]
+                with thread_conn:
+                    for raw in batch:
+                        upsert_advisory(thread_conn, raw)
+            # ETag in its own tiny transaction, written only after every
+            # batch has committed. On a crash mid-ingest the ETag isn't
+            # written, so the next run re-fetches and re-upserts
+            # idempotently (advisory.source_id UNIQUE).
+            if result.etag:
+                with thread_conn:
                     _write_poller_state(thread_conn, state_key, result.etag)
         finally:
             thread_conn.close()

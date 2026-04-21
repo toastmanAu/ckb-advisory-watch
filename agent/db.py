@@ -15,9 +15,15 @@ def open_db(path: Path, schema: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     # check_same_thread=False: lets asyncio.to_thread workers reuse the
     # connection. Safe because our single event loop naturally serializes
-    # writes — no two tasks ever hold the conn concurrently. If a second
-    # concurrent writer is ever introduced, add an asyncio.Lock around writes.
+    # writes — no two tasks ever hold the conn concurrently.
     conn = sqlite3.connect(path, check_same_thread=False)
+    # busy_timeout=10s: when another connection holds the file-level write
+    # lock (e.g. ingest worker thread mid-transaction), a second writer
+    # (walker, matcher) waits up to 10s for the lock instead of failing
+    # fast with "database is locked". Paired with batched ingest so the
+    # worker doesn't hold the lock for more than a couple of seconds at
+    # a time.
+    conn.execute("PRAGMA busy_timeout = 10000")
     conn.executescript(schema.read_text())
     return conn
 
