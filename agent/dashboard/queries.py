@@ -228,6 +228,13 @@ def project_context(
     ecosystem_filter: set[str] | None = None,
     severity_floor: tuple[str, ...] | None = None,
 ) -> ProjectContext | None:
+    """Load a project page's view model: project row + its filtered open matches.
+
+    `severity_filter` and `severity_floor` compose as an intersection when
+    both are set — `severity_floor` is the mirror's content gate, whereas
+    `severity_filter` is the user's interactive filter. The two are not
+    redundant; setting both tightens the result set to their overlap.
+    """
     row = conn.execute(
         """
         SELECT id, slug, display_name, repo_url, default_branch, last_sha, last_checked

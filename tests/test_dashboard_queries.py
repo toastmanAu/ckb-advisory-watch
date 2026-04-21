@@ -6,6 +6,7 @@ import time
 from agent.dashboard.queries import landing_data, LandingData
 from agent.dashboard.queries import (
     project_context, advisory_context, ProjectContext, AdvisoryContext,
+    meets_severity_floor,
 )
 from tests.dashboard_fixtures import fresh_db, seed_match
 
@@ -179,7 +180,6 @@ def test_advisory_context_still_returns_for_low_severity_when_no_floor(tmp_path)
 
 
 def test_meets_severity_floor_basic():
-    from agent.dashboard.queries import meets_severity_floor
     assert meets_severity_floor("critical", ("critical", "high", "medium")) is True
     assert meets_severity_floor("medium", ("critical", "high", "medium")) is True
     assert meets_severity_floor("low", ("critical", "high", "medium")) is False
