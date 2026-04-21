@@ -28,6 +28,11 @@ def _has_post_form(html: str) -> bool:
     return p.found_post_form
 
 
+def _count_html_files(root: Path) -> int:
+    """Return the number of .html files written under *root* (recursive)."""
+    return sum(1 for _ in root.rglob("*.html"))
+
+
 def test_render_all_writes_index_and_project_and_advisory(tmp_path):
     conn = fresh_db(tmp_path)
     seed_match(conn, project_slug="o/r", source_id="GHSA-crit",
@@ -41,6 +46,9 @@ def test_render_all_writes_index_and_project_and_advisory(tmp_path):
     assert (out_dir / "p" / "o" / "r" / "index.html").exists()
     assert (out_dir / "a" / "GHSA-crit" / "index.html").exists()
     assert n_pages >= 3
+    # Return value must match on-disk truth — catches bugs where render_all
+    # silently drops files or double-counts.
+    assert n_pages == _count_html_files(out_dir)
 
 
 def test_render_all_excludes_low_advisory_pages(tmp_path):
@@ -116,6 +124,42 @@ def test_render_all_output_has_mailto_links(tmp_path):
     index_html = (out_dir / "index.html").read_text()
     # The share anchor must be a mailto:
     assert "mailto:?" in index_html
+
+
+def test_render_all_kpi_tiles_are_not_clickable_on_mirror(tmp_path):
+    """Mirror has no server to handle /?severity=X — KPI filter links
+    would 404. Tiles render as plain divs, not anchor-wrapped."""
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="o/r", source_id="GHSA-crit",
+               severity="critical", cvss=9.8)
+    out_dir = tmp_path / "out"
+
+    render_all(conn, out_dir, severity_floor=("critical", "high", "medium"),
+               base_url="")
+
+    index_html = (out_dir / "index.html").read_text()
+    # No KPI anchor links (class kpi-link) should appear in mirror output
+    assert 'class="kpi-link"' not in index_html
+    # No query-string severity filter links either
+    assert "?severity=" not in index_html
+    # But the count content must still be present
+    assert "kpi critical" in index_html
+
+
+def test_render_all_shows_snapshot_not_live_in_topstrip(tmp_path):
+    """Mirror is a snapshot, not live. Topstrip indicator must say so."""
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="o/r", source_id="GHSA-crit",
+               severity="critical", cvss=9.8)
+    out_dir = tmp_path / "out"
+
+    render_all(conn, out_dir, severity_floor=("critical", "high", "medium"),
+               base_url="")
+
+    index_html = (out_dir / "index.html").read_text()
+    assert "snapshot" in index_html
+    # The private dashboard's "● live" must NOT appear on mirror pages
+    assert "● live" not in index_html
 
 
 def test_render_all_is_idempotent_on_rerun(tmp_path):

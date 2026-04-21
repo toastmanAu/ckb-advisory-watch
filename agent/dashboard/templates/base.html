@@ -114,7 +114,7 @@
   <img class="logo" src="/static/logo.png" alt="ckb-advisory-watch">
   <div>
     <div class="name">ckb-advisory-watch</div>
-    <div class="meta">v0.4 · {{ hostname }} · <span style="color:#4dc67b">●</span> live</div>
+    <div class="meta">v0.4 · {{ hostname }} · {% if mirror %}<span style="color:var(--text-dim)">◐</span> snapshot{% else %}<span style="color:#4dc67b">●</span> live{% endif %}</div>
   </div>
   <div class="timestamps">
     <div>osv ingest: <span>{{ last_osv_ingest_label }}</span></div>
@@ -125,12 +125,19 @@
 <div class="kpis">
   {% for level in ['critical','high','medium','low','unknown'] %}
     {% set is_active = (active_sev|default(none)) == level %}
-    <a class="kpi-link" href="{% if is_active %}/{% else %}/?severity={{ level }}{% endif %}">
-      <div class="kpi {{ level }}{% if is_active %} active{% endif %}">
+    {% if mirror %}
+      <div class="kpi {{ level }}">
         <div class="n">{{ kpis[level] }}</div>
         <div class="l">{{ level }}</div>
       </div>
-    </a>
+    {% else %}
+      <a class="kpi-link" href="{% if is_active %}/{% else %}/?severity={{ level }}{% endif %}">
+        <div class="kpi {{ level }}{% if is_active %} active{% endif %}">
+          <div class="n">{{ kpis[level] }}</div>
+          <div class="l">{{ level }}</div>
+        </div>
+      </a>
+    {% endif %}
   {% endfor %}
 </div>
 

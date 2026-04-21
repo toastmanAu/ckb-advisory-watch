@@ -182,3 +182,22 @@ async def test_project_share_button_is_post_form_in_private_mode(tmp_path, share
         body = await resp.text()
     assert 'action="/share/match/' in body
     assert "mailto:" not in body
+
+
+async def test_private_dashboard_kpi_tiles_are_clickable(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/")
+        body = await resp.text()
+    # Private dashboard keeps interactive KPI filters
+    assert 'class="kpi-link"' in body
+    assert "?severity=" in body
+
+
+async def test_private_dashboard_shows_live_not_snapshot(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/")
+        body = await resp.text()
+    # The live indicator is <span ...>●</span> live — span interrupts the pair.
+    # Assert the two components are present and "snapshot" is absent.
+    assert "●</span> live" in body
+    assert "snapshot" not in body

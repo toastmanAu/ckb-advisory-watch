@@ -108,7 +108,7 @@ def _make_mirror_env(base_url: str) -> Environment:
     # the index/project templates we only have the match row's advisory_id
     # (an int), not the full AdvisoryContext. Look up the context by id on
     # demand, cached per render_all pass.
-    adv_cache: dict = {}
+    adv_cache: dict[int, queries.AdvisoryContext | None] = {}
 
     def _mailto(advisory_ref, match=None) -> str:
         # advisory_ref can be an AdvisoryContext (from the advisory page)
