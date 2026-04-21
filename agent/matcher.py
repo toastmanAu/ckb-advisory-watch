@@ -153,27 +153,40 @@ def run_matcher(
             """
         ).fetchall()
 
+        # Pass 1 — evaluate candidates OUTSIDE a write tx. is_affected does
+        # JSON parsing + version parsing + range walking for every joined row
+        # (200k+ on a populated DB), which is the slow part. Keeping the
+        # write-tx open over this window starves walker/ingest of the WAL
+        # write lock and breaks their own retry budgets (see walker.py).
+        candidates: list[tuple[int, int, int]] = []
+        for advisory_id, dep_id, project_id, dep_version, version_range_json in rows:
+            try:
+                ranges = json.loads(version_range_json)
+            except json.JSONDecodeError:
+                continue
+            if is_affected(dep_version, ranges, policy=policy):
+                candidates.append((advisory_id, project_id, dep_id))
+
+        # Pass 2 — batch-commit inserts. Each batch releases the write lock
+        # briefly so concurrent walker/ingest writers can slip in.
         inserted = 0
         now = int(time.time())
-        with thread_conn:
-            for advisory_id, dep_id, project_id, dep_version, version_range_json in rows:
-                try:
-                    ranges = json.loads(version_range_json)
-                except json.JSONDecodeError:
-                    continue
-                if not is_affected(dep_version, ranges, policy=policy):
-                    continue
-                cur = thread_conn.execute(
-                    """
-                    INSERT INTO match (
-                        advisory_id, project_id, project_dep_id, first_matched, state
-                    ) VALUES (?, ?, ?, ?, 'open')
-                    ON CONFLICT (advisory_id, project_dep_id) DO NOTHING
-                    """,
-                    (advisory_id, project_id, dep_id, now),
-                )
-                if cur.rowcount:
-                    inserted += 1
+        batch_size = 500
+        for start in range(0, len(candidates), batch_size):
+            batch = candidates[start:start + batch_size]
+            with thread_conn:
+                for advisory_id, project_id, dep_id in batch:
+                    cur = thread_conn.execute(
+                        """
+                        INSERT INTO match (
+                            advisory_id, project_id, project_dep_id, first_matched, state
+                        ) VALUES (?, ?, ?, ?, 'open')
+                        ON CONFLICT (advisory_id, project_dep_id) DO NOTHING
+                        """,
+                        (advisory_id, project_id, dep_id, now),
+                    )
+                    if cur.rowcount:
+                        inserted += 1
         return inserted
     finally:
         thread_conn.close()
