@@ -66,8 +66,13 @@ async def osv_poll_loop(
                     changed = True
 
         if changed:
-            new_matches = run_matcher(conn)
-            log.info("matcher: %d new matches after osv ingest", new_matches)
+            try:
+                new_matches = await asyncio.to_thread(run_matcher, conn)
+                log.info("matcher: %d new matches after osv ingest", new_matches)
+            except sqlite3.OperationalError as exc:
+                # Transient lock contention with a concurrent writer.
+                # Don't crash the poll loop — next tick retries naturally.
+                log.warning("matcher: skipped this tick (%r)", exc)
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
@@ -97,8 +102,11 @@ async def github_poll_loop(
             log.warning("github.%s: %r", slug, results[slug])
 
         if changed > 0:
-            new_matches = run_matcher(conn)
-            log.info("matcher: %d new matches after github walk", new_matches)
+            try:
+                new_matches = await asyncio.to_thread(run_matcher, conn)
+                log.info("matcher: %d new matches after github walk", new_matches)
+            except sqlite3.OperationalError as exc:
+                log.warning("matcher: skipped this tick (%r)", exc)
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)

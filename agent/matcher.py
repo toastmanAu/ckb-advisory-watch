@@ -131,39 +131,49 @@ def run_matcher(
 
     The JOIN restricts to current deps only (project_dep.source_sha ==
     project.last_sha). Stale audit-trail rows from previous walks don't
-    fire alerts. UNIQUE (advisory_id, project_dep_id) handles idempotency."""
-    rows = conn.execute(
-        """
-        SELECT a.id, pd.id, pd.project_id, pd.version, aa.version_range
-        FROM advisory a
-        JOIN advisory_affects aa ON aa.advisory_id = a.id
-        JOIN project_dep pd
-             ON pd.ecosystem = aa.ecosystem
-            AND pd.name = aa.name
-        JOIN project p ON p.id = pd.project_id
-        WHERE pd.source_sha = p.last_sha
-        """
-    ).fetchall()
+    fire alerts. UNIQUE (advisory_id, project_dep_id) handles idempotency.
 
-    inserted = 0
-    now = int(time.time())
-    with conn:
-        for advisory_id, dep_id, project_id, dep_version, version_range_json in rows:
-            try:
-                ranges = json.loads(version_range_json)
-            except json.JSONDecodeError:
-                continue
-            if not is_affected(dep_version, ranges, policy=policy):
-                continue
-            cur = conn.execute(
-                """
-                INSERT INTO match (
-                    advisory_id, project_id, project_dep_id, first_matched, state
-                ) VALUES (?, ?, ?, ?, 'open')
-                ON CONFLICT (advisory_id, project_dep_id) DO NOTHING
-                """,
-                (advisory_id, project_id, dep_id, now),
-            )
-            if cur.rowcount:
-                inserted += 1
-    return inserted
+    Opens its own connection (same pattern as ingest_ecosystem, walker —
+    avoids transaction races with concurrent writers). Safe to call from
+    within asyncio.to_thread."""
+    db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    thread_conn = sqlite3.connect(db_path)
+    thread_conn.execute("PRAGMA busy_timeout = 10000")
+    try:
+        rows = thread_conn.execute(
+            """
+            SELECT a.id, pd.id, pd.project_id, pd.version, aa.version_range
+            FROM advisory a
+            JOIN advisory_affects aa ON aa.advisory_id = a.id
+            JOIN project_dep pd
+                 ON pd.ecosystem = aa.ecosystem
+                AND pd.name = aa.name
+            JOIN project p ON p.id = pd.project_id
+            WHERE pd.source_sha = p.last_sha
+            """
+        ).fetchall()
+
+        inserted = 0
+        now = int(time.time())
+        with thread_conn:
+            for advisory_id, dep_id, project_id, dep_version, version_range_json in rows:
+                try:
+                    ranges = json.loads(version_range_json)
+                except json.JSONDecodeError:
+                    continue
+                if not is_affected(dep_version, ranges, policy=policy):
+                    continue
+                cur = thread_conn.execute(
+                    """
+                    INSERT INTO match (
+                        advisory_id, project_id, project_dep_id, first_matched, state
+                    ) VALUES (?, ?, ?, ?, 'open')
+                    ON CONFLICT (advisory_id, project_dep_id) DO NOTHING
+                    """,
+                    (advisory_id, project_id, dep_id, now),
+                )
+                if cur.rowcount:
+                    inserted += 1
+        return inserted
+    finally:
+        thread_conn.close()
