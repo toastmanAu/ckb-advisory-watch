@@ -15,6 +15,7 @@ Schema notes:
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import re
@@ -366,18 +367,26 @@ async def ingest_ecosystem(
     All upserts for the ecosystem + the ETag write happen in a single
     transaction. Either the whole ecosystem lands atomically or nothing
     does — prevents half-written state on crash, and is ~100x faster than
-    per-record commits on the Zero 3's SD card."""
+    per-record commits on the Zero 3's SD card.
+
+    The sync upsert loop runs inside asyncio.to_thread so the main event
+    loop stays responsive during large ingests (npm's 217k records used
+    to block the dashboard HTTP accept for ~20 min on ARM). See task #49."""
     state_key = f"osv.etag.{ecosystem}"
     prev_etag = read_poller_state(conn, state_key)
     result = await fetch_ecosystem(client, ecosystem, prev_etag)
     if not result.modified:
         return 0
-    with conn:  # BEGIN / COMMIT (or ROLLBACK on exception)
-        for raw in result.records:
-            upsert_advisory(conn, raw)
-        if result.etag:
-            _write_poller_state(conn, state_key, result.etag)
-    return len(result.records)
+
+    def _apply() -> int:
+        with conn:  # BEGIN / COMMIT (or ROLLBACK on exception)
+            for raw in result.records:
+                upsert_advisory(conn, raw)
+            if result.etag:
+                _write_poller_state(conn, state_key, result.etag)
+        return len(result.records)
+
+    return await asyncio.to_thread(_apply)
 
 
 DEFAULT_ECOSYSTEMS = ("crates.io", "npm", "PyPI", "Go", "Maven")
