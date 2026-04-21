@@ -201,7 +201,22 @@ async def walk_project(
             thread_conn.close()
         return total_local
 
-    return await asyncio.to_thread(_apply)
+    # Retry on transient "database is locked" — when an OSV ingest batch
+    # runs longer than the 10s busy_timeout (can happen on ARM for big
+    # npm batches), walker's commit fails. A short backoff retry clears
+    # the spurious failure without making the operator wait for the next
+    # daily tick. Three attempts covers the worst observed gap (~30s).
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            return await asyncio.to_thread(_apply)
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            last_err = exc
+            await asyncio.sleep(5 * (attempt + 1))
+    assert last_err is not None
+    raise last_err
 
 
 async def walk_all(
