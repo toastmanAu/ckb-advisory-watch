@@ -290,7 +290,20 @@ def upsert_advisory(conn: sqlite3.Connection, raw: dict[str, Any]) -> int:
 class FetchResult:
     modified: bool
     etag: str | None
-    records: list[dict[str, Any]]
+    # Raw zip bytes — deliberately NOT parsed here. Parsing 217k npm
+    # records synchronously would block the main event loop for 30-60s
+    # on ARM. Callers pass this to a worker thread via asyncio.to_thread
+    # and iterate via _iter_zip_json there. None when modified=False.
+    zip_bytes: bytes | None
+
+    @property
+    def records(self) -> list[dict[str, Any]]:
+        """Back-compat for tests and any legacy caller that wanted the
+        materialised record list. Parses the zip synchronously on access —
+        don't call on the main event loop for large ecosystems."""
+        if self.zip_bytes is None:
+            return []
+        return list(_iter_zip_json(self.zip_bytes))
 
 
 async def fetch_ecosystem(
@@ -302,7 +315,11 @@ async def fetch_ecosystem(
 
     Returns modified=False on 304 (nothing changed upstream). Raises on any
     non-2xx/304 response — callers decide whether to log-and-continue or abort
-    the whole ingest run."""
+    the whole ingest run.
+
+    Deliberately does NOT parse the zip here — that happens inside the
+    worker thread in ingest_ecosystem so the main event loop stays
+    responsive during large ingests (Task #49)."""
     headers = {"If-None-Match": prev_etag} if prev_etag else {}
     resp = await client.get(
         f"{OSV_BASE}/{ecosystem}/all.zip",
@@ -310,13 +327,12 @@ async def fetch_ecosystem(
         timeout=60.0,
     )
     if resp.status_code == 304:
-        return FetchResult(modified=False, etag=prev_etag, records=[])
+        return FetchResult(modified=False, etag=prev_etag, zip_bytes=None)
     resp.raise_for_status()
-    records = list(_iter_zip_json(resp.content))
     return FetchResult(
         modified=True,
         etag=resp.headers.get("etag"),
-        records=records,
+        zip_bytes=resp.content,
     )
 
 
@@ -392,22 +408,32 @@ async def ingest_ecosystem(
     # rows (seq, name, file); seq=0 is the main attached database.
     db_path = conn.execute("PRAGMA database_list").fetchone()[2]
 
-    # Break the upsert loop into small transactions so concurrent writers
-    # (walker, matcher) can acquire the file-level write lock in between.
-    # At ~1000 upserts per commit, the lock is held for ~1-3s on the Pi —
-    # shorter than the 10s busy_timeout other writers retry with.
+    # Parse the zip AND batch-upsert in the worker thread so neither the
+    # 30-60s JSON-parse of a large zip (npm) nor the multi-minute upsert
+    # loop blocks the event loop. Batches of 1000 give other writers
+    # (walker, matcher) windows to grab the file-level write lock.
     BATCH_SIZE = 1000
+    zip_bytes = result.zip_bytes  # captured before the closure
 
     def _apply() -> int:
         thread_conn = sqlite3.connect(db_path)
         thread_conn.execute("PRAGMA busy_timeout = 10000")
+        total = 0
         try:
-            records = result.records
-            for start in range(0, len(records), BATCH_SIZE):
-                batch = records[start : start + BATCH_SIZE]
+            batch: list[dict[str, Any]] = []
+            for raw in _iter_zip_json(zip_bytes or b""):
+                batch.append(raw)
+                if len(batch) >= BATCH_SIZE:
+                    with thread_conn:
+                        for r in batch:
+                            upsert_advisory(thread_conn, r)
+                    total += len(batch)
+                    batch = []
+            if batch:
                 with thread_conn:
-                    for raw in batch:
-                        upsert_advisory(thread_conn, raw)
+                    for r in batch:
+                        upsert_advisory(thread_conn, r)
+                total += len(batch)
             # ETag in its own tiny transaction, written only after every
             # batch has committed. On a crash mid-ingest the ETag isn't
             # written, so the next run re-fetches and re-upserts
@@ -417,7 +443,7 @@ async def ingest_ecosystem(
                     _write_poller_state(thread_conn, state_key, result.etag)
         finally:
             thread_conn.close()
-        return len(result.records)
+        return total
 
     return await asyncio.to_thread(_apply)
 
