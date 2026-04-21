@@ -157,3 +157,20 @@ async def test_share_match_post_propagates_smtp_error_as_query_param(tmp_path, s
         resp = await client.post("/share/match/1", allow_redirects=False)
     assert resp.status == 303
     assert "sent_error=" in resp.headers["Location"]
+
+
+async def test_index_share_button_is_post_form_in_private_mode(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/")
+        body = await resp.text()
+    # Private dashboard MUST still render the POST form (not a mailto: anchor).
+    assert 'action="/share/match/' in body
+    assert "mailto:" not in body
+
+
+async def test_advisory_share_button_is_post_form_in_private_mode(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/a/GHSA-crit")
+        body = await resp.text()
+    assert 'action="/share/advisory/GHSA-crit"' in body
+    assert "mailto:" not in body

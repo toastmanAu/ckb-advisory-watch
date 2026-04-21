@@ -35,9 +35,13 @@
           <td style="color:var(--sev-low)">{{ m.fixed_in or '—' }}</td>
           <td class="num" style="color:var(--text-dim)">{{ ago_label(m.first_matched) if ago_label is defined else m.first_matched }}</td>
           <td style="text-align:center">
+            {% if mirror %}
+            <a class="share sm" href="{{ mailto_href(m.advisory_id, m) }}" style="display:inline-block;padding:2px 8px;text-decoration:none">📤</a>
+            {% else %}
             <form method="POST" action="/share/match/{{ m.match_id }}" style="margin:0">
               <button type="submit" class="share sm">📤</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

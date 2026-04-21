@@ -28,9 +28,13 @@
 
   <div style="padding:12px 0 14px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
     <strong style="font-size:12px">AFFECTS {{ advisory.matches|length }} PROJECT(S)</strong>
+    {% if mirror %}
+    <a class="share" href="{{ mailto_href(advisory) }}" style="margin-left:auto;display:inline-block;text-decoration:none">📤 forward by email</a>
+    {% else %}
     <form method="POST" action="/share/advisory/{{ advisory.source_id }}" style="margin-left:auto">
       <button type="submit" class="share">📤 share to inbox</button>
     </form>
+    {% endif %}
   </div>
 
   <table class="data" style="margin-top:14px">

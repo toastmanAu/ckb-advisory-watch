@@ -101,6 +101,7 @@ async def index_view(request: web.Request) -> web.Response:
         top_projects=data.top_projects,
         top_advisories=data.top_advisories,
         active_sev=active_sev,  # template highlights the clicked tile
+        mirror=False,
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -131,6 +132,7 @@ async def project_view(request: web.Request) -> web.Response:
         flash=_flash_from_query(request),
         project=ctx,
         active_severity_filter=",".join(sorted(severity_filter)) if severity_filter else "",
+        mirror=False,
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -160,6 +162,7 @@ async def advisory_view(request: web.Request) -> web.Response:
         last_walk_label=_ago(landing.last_github_walk),
         flash=_flash_from_query(request),
         advisory=ctx,
+        mirror=False,
     )
     return web.Response(text=html, content_type="text/html")
 
