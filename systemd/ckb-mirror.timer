@@ -1,0 +1,25 @@
+[Unit]
+Description=Render + deploy public advisory mirror hourly
+# NB: no After=ckb-advisory-watch.service here. Timer units depend on
+# timers.target which pulls in via basic.target, so ordering the timer
+# after a regular service creates a dependency cycle that systemd
+# silently refuses to schedule. Ordering belongs on the service (which
+# already has it) — the timer just fires; the service then waits its
+# turn naturally.
+
+[Timer]
+# Start 5 minutes after boot so the agent has had a chance to ingest and
+# matcher-run at least once — the first post-boot mirror snapshot then
+# reflects the ingested state, not an empty DB.
+OnBootSec=5min
+# Fire every hour after the previous run STARTED (so a slow deploy
+# doesn't slip subsequent runs).
+OnUnitActiveSec=1h
+Unit=ckb-mirror.service
+# If the Pi was off at a scheduled run, systemd fires one catch-up
+# execution on next boot. No batching — if the Pi was off for 6 hours,
+# we get a single post-boot fire, not six.
+Persistent=true
+
+[Install]
+WantedBy=default.target

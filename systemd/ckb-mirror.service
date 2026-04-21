@@ -1,0 +1,23 @@
+[Unit]
+Description=CKB advisory public mirror — render and deploy
+# Run after the agent's DB writer is up so reads see fresh data. The
+# agent's own systemd unit handles restart; this is a best-effort order
+# hint — Type=oneshot doesn't actually require the agent to be running
+# (the mirror opens its own read-only connection).
+After=ckb-advisory-watch.service
+Wants=ckb-advisory-watch.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/ckb-advisory-watch
+ExecStart=%h/ckb-advisory-watch/.venv/bin/python -m agent.mirror --config %h/ckb-advisory-watch/config.toml
+
+# Network + CPU ceilings. Mirror renders take ~5s on a populated DB on
+# Pi Zero 3; wrangler upload is bounded by network. 240s subprocess
+# budget (per Task 6) + render + scan fits within 300s start timeout.
+TimeoutStartSec=300
+
+# Keep journalctl tidy — log full stdout/stderr to the journal; it's one
+# line per step so volume is minimal.
+StandardOutput=journal
+StandardError=journal
