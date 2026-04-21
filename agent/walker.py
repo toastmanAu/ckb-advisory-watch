@@ -153,24 +153,21 @@ async def walk_project(
     paths = await _list_tree(client, slug, new_sha)
     lockfiles = _find_lockfiles(paths)
 
-    # Fetch + parse every lockfile first (network-bound), so the transaction
-    # window only holds SQLite writes.
-    parsed: list[tuple[str, list[tuple[str, str]]]] = []
+    # Collect raw lockfile bodies on the main loop via async httpx. Parsing
+    # and writing happen together in a worker thread below so neither
+    # large-YAML parsing (pnpm) nor large-JSON parsing (npm) block the
+    # event loop. Per Task #49: every sync CPU- or disk-bound step over
+    # big collections should live in asyncio.to_thread.
+    bodies: list[tuple[str, Callable, str, str]] = []  # (ecosystem, parser, lockfile_path, body)
     for path, basename in lockfiles:
         ecosystem, parser = LOCKFILE_PARSERS[basename]
         try:
             body = await _fetch_file(client, slug, new_sha, path)
-            deps = parser(body)
         except Exception as exc:
-            log.warning("%s: parse failed for %s: %r", slug, path, exc)
+            log.warning("%s: fetch failed for %s: %r", slug, path, exc)
             continue
-        parsed.append((ecosystem, deps))
+        bodies.append((ecosystem, parser, path, body))
 
-    # Same to_thread pattern as OSV ingest (Task #49). A pnpm/npm project
-    # can have 2000+ deps — the sync upsert loop would block the main event
-    # loop for several seconds per project, starving the dashboard's HTTP
-    # accept. Worker thread uses its own connection so walker transactions
-    # don't race the ingest worker's big transactions.
     db_path = conn.execute("PRAGMA database_list").fetchone()[2]
 
     def _apply() -> int:
@@ -179,7 +176,12 @@ async def walk_project(
         total_local = 0
         try:
             with thread_conn:
-                for ecosystem, deps in parsed:
+                for ecosystem, parser, path, body in bodies:
+                    try:
+                        deps = parser(body)
+                    except Exception as exc:
+                        log.warning("%s: parse failed for %s: %r", slug, path, exc)
+                        continue
                     for name, version in deps:
                         upsert_project_dep(
                             thread_conn,
