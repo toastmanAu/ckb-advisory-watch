@@ -15,6 +15,7 @@ client carries one, giving 5000 req/hour instead of 60.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 import time
@@ -165,26 +166,40 @@ async def walk_project(
             continue
         parsed.append((ecosystem, deps))
 
-    total = 0
-    with conn:
-        for ecosystem, deps in parsed:
-            for name, version in deps:
-                upsert_project_dep(
-                    conn,
-                    project_id=project_id,
-                    ecosystem=ecosystem,
-                    name=name,
-                    version=version,
-                    source_sha=new_sha,
-                )
-                total += 1
-        conn.execute(
-            "UPDATE project SET last_sha = ?, last_checked = ?, default_branch = ? "
-            "WHERE id = ?",
-            (new_sha, int(time.time()), actual_branch, project_id),
-        )
+    # Same to_thread pattern as OSV ingest (Task #49). A pnpm/npm project
+    # can have 2000+ deps — the sync upsert loop would block the main event
+    # loop for several seconds per project, starving the dashboard's HTTP
+    # accept. Worker thread uses its own connection so walker transactions
+    # don't race the ingest worker's big transactions.
+    db_path = conn.execute("PRAGMA database_list").fetchone()[2]
 
-    return total
+    def _apply() -> int:
+        thread_conn = sqlite3.connect(db_path)
+        thread_conn.execute("PRAGMA busy_timeout = 10000")
+        total_local = 0
+        try:
+            with thread_conn:
+                for ecosystem, deps in parsed:
+                    for name, version in deps:
+                        upsert_project_dep(
+                            thread_conn,
+                            project_id=project_id,
+                            ecosystem=ecosystem,
+                            name=name,
+                            version=version,
+                            source_sha=new_sha,
+                        )
+                        total_local += 1
+                thread_conn.execute(
+                    "UPDATE project SET last_sha = ?, last_checked = ?, "
+                    "default_branch = ? WHERE id = ?",
+                    (new_sha, int(time.time()), actual_branch, project_id),
+                )
+        finally:
+            thread_conn.close()
+        return total_local
+
+    return await asyncio.to_thread(_apply)
 
 
 async def walk_all(
