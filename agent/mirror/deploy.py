@@ -105,35 +105,53 @@ def deploy_via_wrangler(
 ) -> None:
     """Shell to `wrangler pages deploy` with Direct Upload.
 
-    Sets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` env vars (per
-    wrangler's documented auth path — no wrangler.toml needed for a
-    one-shot upload). Uses `--branch=main` to mark this the production
-    deploy (not a preview), and `--commit-dirty=true` to suppress the
-    no-git-repo warning since we're uploading a throwaway /tmp dir."""
+    Sets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` env vars. Uses
+    `--branch=main` to mark the production deploy, and `--commit-dirty=true`
+    to suppress the no-git-repo warning since we upload a throwaway /tmp
+    dir.
+
+    Subprocess timeout is 240s, leaving ~60s of headroom below the Task 9
+    systemd unit's 300s TimeoutStartSec cap so render + scan phases that
+    precede this call can still finish within the outer budget.
+
+    Env is constructed by allow-list (PATH, HOME, NVM_DIR, NODE_PATH,
+    HTTPS_PROXY, HTTP_PROXY, NO_PROXY) rather than inheriting os.environ —
+    keeps loader vars and shell state out of wrangler's context while
+    preserving the ones NVM-installed Node and proxied networks need."""
     argv = [
         "wrangler", "pages", "deploy", str(out_dir),
         f"--project-name={project_name}",
         "--branch=main",
         "--commit-dirty=true",
     ]
-    env = {
-        "CLOUDFLARE_API_TOKEN": api_token,
-        "CLOUDFLARE_ACCOUNT_ID": account_id,
-        # Preserve PATH so wrangler (installed under /usr/local/bin or
-        # ~/.nvm/.../bin) is findable.
-        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-        "HOME": os.environ.get("HOME", "/tmp"),
-    }
+    # Forward a curated set of env vars from the caller's environment.
+    # Allow-list rather than inherit-all: keeps loader vars (LD_PRELOAD,
+    # LD_LIBRARY_PATH) and shell state out of wrangler's context, but
+    # lets NVM-installed Node and proxy config reach it — both of which
+    # are real-world breakage modes on Pi/Linux installs.
+    _FORWARD_ENV = (
+        "PATH", "HOME",
+        "NVM_DIR", "NODE_PATH",              # NVM-based Node installs
+        "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",  # proxied networks
+    )
+    env = {k: os.environ[k] for k in _FORWARD_ENV if k in os.environ}
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    env.setdefault("HOME", "/tmp")
+    env["CLOUDFLARE_API_TOKEN"] = api_token
+    env["CLOUDFLARE_ACCOUNT_ID"] = account_id
     try:
         result = subprocess.run(
-            argv, env=env, capture_output=True, text=True, timeout=300,
+            argv, env=env, capture_output=True, text=True, timeout=240,
         )
     except FileNotFoundError as exc:
         raise DeployError(
             "wrangler not found on PATH. Install: npm install -g wrangler"
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        raise DeployError(f"wrangler timed out after 300s: {exc!r}") from exc
+        raise DeployError(
+            f"wrangler timed out after 240s (project={project_name!r}) — check "
+            f"network or reduce mirror size"
+        ) from exc
 
     if result.returncode != 0:
         raise DeployError(

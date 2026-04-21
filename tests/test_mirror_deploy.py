@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.mirror.deploy import SecretFound, scan_for_secrets
+from agent.mirror.deploy import (
+    DeployError, SecretFound, deploy_via_wrangler, scan_for_secrets,
+)
 
 
 def test_scan_clean_tree_returns_empty(tmp_path):
@@ -116,10 +119,6 @@ def test_scan_ignores_non_utf8_html_file(tmp_path):
 
 
 def test_deploy_via_wrangler_happy_path(tmp_path):
-    from unittest.mock import MagicMock, patch
-
-    from agent.mirror.deploy import DeployError, deploy_via_wrangler
-
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     (out_dir / "index.html").write_text("<html></html>")
@@ -149,10 +148,6 @@ def test_deploy_via_wrangler_happy_path(tmp_path):
 
 
 def test_deploy_via_wrangler_failure_raises_with_stderr(tmp_path):
-    from unittest.mock import MagicMock, patch
-
-    from agent.mirror.deploy import DeployError, deploy_via_wrangler
-
     out_dir = tmp_path / "out"
     out_dir.mkdir()
 
@@ -171,10 +166,6 @@ def test_deploy_via_wrangler_failure_raises_with_stderr(tmp_path):
 
 
 def test_deploy_via_wrangler_missing_wrangler_binary_raises(tmp_path):
-    from unittest.mock import MagicMock, patch
-
-    from agent.mirror.deploy import DeployError, deploy_via_wrangler
-
     out_dir = tmp_path / "out"
     out_dir.mkdir()
 
@@ -189,3 +180,28 @@ def test_deploy_via_wrangler_missing_wrangler_binary_raises(tmp_path):
             )
         assert "wrangler" in str(excinfo.value).lower()
         assert "npm install" in str(excinfo.value)
+
+
+def test_deploy_via_wrangler_timeout_raises(tmp_path):
+    """Hung deploy on Pi Zero 3 residential network must surface as a
+    DeployError with 'timed out' in the message — not a raw TimeoutExpired
+    that confuses the CLI's exit-code mapping."""
+    import subprocess
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    sensitive_token = "SENSITIVE_TOKEN_xyz123"
+    with patch("agent.mirror.deploy.subprocess.run") as run:
+        run.side_effect = subprocess.TimeoutExpired(cmd=["wrangler"], timeout=240)
+        with pytest.raises(DeployError) as excinfo:
+            deploy_via_wrangler(
+                out_dir=out_dir,
+                project_name="ckb-advisories",
+                api_token=sensitive_token,
+                account_id="a",
+            )
+        msg = str(excinfo.value)
+        assert "timed out" in msg
+        assert "240" in msg
+        # Token must not leak even via repr(exc) — hardened by using
+        # project_name!r in the message instead of exc!r.
+        assert sensitive_token not in msg
