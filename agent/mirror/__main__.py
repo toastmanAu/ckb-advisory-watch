@@ -2,8 +2,14 @@
 
 Called by the systemd timer (see systemd/ckb-mirror.timer) every hour.
 Pipeline: load config → gate on enabled → open DB read-only → render →
-secret scan → wrangler deploy. Exits 0 on success (including disabled),
-1 on render/scan/deploy failure, 2 on config error."""
+secret scan → wrangler deploy.
+
+Exit codes:
+  0  success (including the disabled no-op)
+  1  runtime failure — missing state.db, render exception,
+      secret-scan finding, or wrangler deploy error
+  2  config failure — TOML file missing, required field empty
+      (api_token, account_id, project_name), or unknown min_severity"""
 from __future__ import annotations
 
 import argparse
@@ -18,7 +24,7 @@ except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
 from agent.mirror.deploy import (
-    DeployError, SecretScanFailed, deploy_via_wrangler, scan_for_secrets,
+    DeployError, deploy_via_wrangler, scan_for_secrets,
 )
 from agent.mirror.render import render_all
 
@@ -50,9 +56,7 @@ def main(argv: list[str] | None = None) -> int:
 
     mirror_cfg = (config.get("outputs") or {}).get("public_mirror") or {}
     if not mirror_cfg.get("enabled", False):
-        msg = "mirror disabled ([outputs.public_mirror].enabled = false)"
-        log.info(msg)
-        print(msg, file=sys.stderr)
+        log.info("mirror disabled ([outputs.public_mirror].enabled = false)")
         return 0
 
     project_name = mirror_cfg.get("project_name", "")

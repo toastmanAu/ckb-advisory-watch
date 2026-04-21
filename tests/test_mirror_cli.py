@@ -30,15 +30,16 @@ base_url = "https://advisories.example.com"
     return cfg_path
 
 
-def test_cli_exits_0_when_disabled(tmp_path, capsys):
+def test_cli_exits_0_when_disabled(tmp_path, caplog):
+    import logging
     conn = fresh_db(tmp_path)
     conn.close()
     cfg_path = _write_config(tmp_path, enabled=False)
 
-    rc = mirror_main(["--config", str(cfg_path)])
+    with caplog.at_level(logging.INFO):
+        rc = mirror_main(["--config", str(cfg_path)])
     assert rc == 0
-    captured = capsys.readouterr()
-    assert "disabled" in (captured.out + captured.err).lower()
+    assert "disabled" in caplog.text.lower()
 
 
 def test_cli_exits_2_when_api_token_empty(tmp_path):
@@ -93,3 +94,70 @@ def test_cli_exits_1_if_secrets_leak_into_output(tmp_path):
 
     assert rc == 1
     assert not deploy.called  # deploy must not run when secrets detected
+
+
+def test_cli_exits_2_when_account_id_empty(tmp_path):
+    conn = fresh_db(tmp_path)
+    conn.close()
+    cfg_path = _write_config(tmp_path, enabled=True, account_id="")
+    rc = mirror_main(["--config", str(cfg_path)])
+    assert rc == 2
+
+
+def test_cli_exits_2_when_project_name_empty(tmp_path):
+    """project_name is required to target a Cloudflare Pages project."""
+    conn = fresh_db(tmp_path)
+    conn.close()
+    # _write_config hardcodes project_name; need a variant config.
+    cfg_path = tmp_path / "mirror.toml"
+    cfg_path.write_text(f'''
+[agent]
+data_dir = "{tmp_path}"
+
+[outputs.public_mirror]
+enabled = true
+project_name = ""
+api_token = "t"
+account_id = "a"
+min_severity = "medium"
+out_dir = "{tmp_path / 'out'}"
+base_url = "https://advisories.example.com"
+''')
+    rc = mirror_main(["--config", str(cfg_path)])
+    assert rc == 2
+
+
+def test_cli_exits_2_when_min_severity_invalid(tmp_path):
+    conn = fresh_db(tmp_path)
+    conn.close()
+    cfg_path = tmp_path / "mirror.toml"
+    cfg_path.write_text(f'''
+[agent]
+data_dir = "{tmp_path}"
+
+[outputs.public_mirror]
+enabled = true
+project_name = "ckb-advisories-test"
+api_token = "t"
+account_id = "a"
+min_severity = "banana"
+out_dir = "{tmp_path / 'out'}"
+base_url = "https://advisories.example.com"
+''')
+    rc = mirror_main(["--config", str(cfg_path)])
+    assert rc == 2
+
+
+def test_cli_exits_1_when_state_db_missing(tmp_path):
+    """state.db must exist before mirror runs — agent is responsible for it.
+    A missing DB is a runtime error (exit 1), not a config error (exit 2)."""
+    # Deliberately do NOT call fresh_db — no state.db on disk.
+    cfg_path = _write_config(tmp_path, enabled=True)
+    rc = mirror_main(["--config", str(cfg_path)])
+    assert rc == 1
+
+
+def test_cli_exits_2_when_config_file_missing(tmp_path):
+    missing = tmp_path / "nonexistent.toml"
+    rc = mirror_main(["--config", str(missing)])
+    assert rc == 2
