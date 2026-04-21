@@ -136,3 +136,54 @@ def test_advisory_context_includes_references(tmp_path):
     seed_match(conn, source_id="GHSA-refs")
     ctx = advisory_context(conn, "GHSA-refs")
     assert any("example.com" in ref["url"] for ref in ctx.references)
+
+
+def test_project_context_severity_floor_excludes_low_and_unknown(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="a/b", source_id="GHSA-crit",
+               severity="critical", cvss=9.8, dep_name="p1")
+    seed_match(conn, project_slug="a/b", source_id="GHSA-med",
+               severity="medium", cvss=5.0, dep_name="p2")
+    seed_match(conn, project_slug="a/b", source_id="GHSA-low",
+               severity="low", cvss=3.0, dep_name="p3")
+    seed_match(conn, project_slug="a/b", source_id="GHSA-unknown",
+               severity=None, cvss=None, dep_name="p4")
+
+    ctx = project_context(
+        conn, "a/b",
+        severity_floor=("critical", "high", "medium"),
+    )
+    assert ctx is not None
+    seen = {m.source_id for m in ctx.matches}
+    assert seen == {"GHSA-crit", "GHSA-med"}
+
+
+def test_project_context_severity_floor_none_is_no_filter(tmp_path):
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="a/b", source_id="GHSA-low",
+               severity="low", cvss=3.0, dep_name="p1")
+    ctx = project_context(conn, "a/b", severity_floor=None)
+    assert ctx is not None
+    assert {m.source_id for m in ctx.matches} == {"GHSA-low"}
+
+
+def test_advisory_context_still_returns_for_low_severity_when_no_floor(tmp_path):
+    """advisory_context itself does not gate on severity; the caller
+    (mirror render_all) decides whether to emit the page."""
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="a/b", source_id="GHSA-low",
+               severity="low", cvss=3.0, dep_name="p1")
+    ctx = advisory_context(conn, "GHSA-low")
+    assert ctx is not None
+    assert ctx.severity == "low"
+
+
+def test_meets_severity_floor_basic():
+    from agent.dashboard.queries import meets_severity_floor
+    assert meets_severity_floor("critical", ("critical", "high", "medium")) is True
+    assert meets_severity_floor("medium", ("critical", "high", "medium")) is True
+    assert meets_severity_floor("low", ("critical", "high", "medium")) is False
+    assert meets_severity_floor(None, ("critical", "high", "medium")) is False
+    # Empty floor tuple means "no floor" — everything passes
+    assert meets_severity_floor("low", ()) is True
+    assert meets_severity_floor(None, ()) is True

@@ -104,6 +104,19 @@ def _kpis(conn: sqlite3.Connection) -> dict[str, int]:
 DEFAULT_TRIAGE_SEVERITIES: tuple[str, ...] = ("critical", "high")
 
 
+def meets_severity_floor(
+    severity: str | None,
+    floor: tuple[str, ...],
+) -> bool:
+    """True if severity is in the floor tuple. `None` (unknown) never qualifies
+    for a non-empty floor. An empty floor tuple means "no floor" — always True."""
+    if not floor:
+        return True
+    if severity is None:
+        return False
+    return severity in floor
+
+
 def _triage(
     conn: sqlite3.Connection,
     limit: int,
@@ -213,6 +226,7 @@ def project_context(
     *,
     severity_filter: set[str] | None = None,
     ecosystem_filter: set[str] | None = None,
+    severity_floor: tuple[str, ...] | None = None,
 ) -> ProjectContext | None:
     row = conn.execute(
         """
@@ -235,6 +249,11 @@ def project_context(
         placeholders = ",".join("?" for _ in ecosystem_filter)
         where.append(f"pd.ecosystem IN ({placeholders})")
         params.extend(sorted(ecosystem_filter))
+    if severity_floor:
+        placeholders = ",".join("?" for _ in severity_floor)
+        # COALESCE so NULL-severity rows never pass a non-empty floor
+        where.append(f"COALESCE(a.severity,'unknown') IN ({placeholders})")
+        params.extend(sorted(severity_floor))
 
     return ProjectContext(
         project_id=pid,
