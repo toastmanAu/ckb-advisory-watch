@@ -159,6 +159,31 @@ def render_all(
         conn,
         triage_severities=severity_floor or queries.DEFAULT_TRIAGE_SEVERITIES,
     )
+
+    # Pre-filter top_advisories to only those that will get a rendered page.
+    # Without this, low-severity advisories appear in the sidebar with links
+    # to /a/GHSA-xxx pages that were never written — a 404 on static hosting.
+    if severity_floor:
+        placeholders = ",".join("?" for _ in severity_floor)
+        qualifying_ids: set[str] = {
+            r[0]
+            for r in conn.execute(
+                f"""
+                SELECT a.source_id FROM advisory a
+                JOIN match m ON m.advisory_id = a.id
+                WHERE m.state = 'open'
+                  AND COALESCE(a.severity, 'unknown') IN ({placeholders})
+                """,
+                tuple(severity_floor),
+            ).fetchall()
+        }
+        landing_top_advisories = [
+            (sid, n) for (sid, n) in landing.top_advisories
+            if sid in qualifying_ids
+        ]
+    else:
+        landing_top_advisories = list(landing.top_advisories)
+
     base_ctx = dict(
         kpis=landing.kpis,
         hostname="advisories.wyltekindustries.com",
@@ -177,7 +202,7 @@ def render_all(
             **base_ctx,
             triage=landing.triage,
             top_projects=landing.top_projects,
-            top_advisories=landing.top_advisories,
+            top_advisories=landing_top_advisories,
             active_sev=None,
         )
     )

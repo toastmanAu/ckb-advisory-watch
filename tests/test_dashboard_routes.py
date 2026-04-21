@@ -201,3 +201,12 @@ async def test_private_dashboard_shows_live_not_snapshot(tmp_path, share_config)
     # Assert the two components are present and "snapshot" is absent.
     assert "●</span> live" in body
     assert "snapshot" not in body
+
+
+async def test_private_dashboard_project_page_has_filter_form(tmp_path, share_config):
+    async with await _client(tmp_path, share_config) as client:
+        resp = await client.get("/p/a/b")
+        body = await resp.text()
+    # Private dashboard keeps the interactive severity filter
+    assert 'method="GET"' in body or 'method="get"' in body
+    assert 'name="severity"' in body

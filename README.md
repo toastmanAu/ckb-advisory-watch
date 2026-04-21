@@ -116,7 +116,7 @@ Share buttons become `mailto:` links. Severity floor: `medium`+ by default.
 
 6. **Smoke-test a render locally (no deploy)**
    ```bash
-   ~/.venv/bin/python -c "
+   ~/ckb-advisory-watch/.venv/bin/python -c "
    import sqlite3
    from pathlib import Path
    from agent.mirror.render import render_all
@@ -128,7 +128,7 @@ Share buttons become `mailto:` links. Severity floor: `medium`+ by default.
 
 7. **Full end-to-end (runs wrangler)**
    ```bash
-   ~/.venv/bin/python -m agent.mirror --config config.toml
+   ~/ckb-advisory-watch/.venv/bin/python -m agent.mirror --config config.toml
    ```
 
 8. **Install the hourly timer**

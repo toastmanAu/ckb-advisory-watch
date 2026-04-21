@@ -8,6 +8,7 @@
     <a class="mono" style="margin-left:auto" href="{{ project.repo_url }}">{{ project.repo_url }}</a>
   </div>
 
+  {% if not mirror %}
   <form method="GET" style="margin-bottom:10px;font:12px Inter">
     <label>severity:
       <select name="severity">
@@ -19,6 +20,11 @@
     <button type="submit" class="share sm">apply</button>
     <span class="mono" style="margin-left:10px;color:var(--text-dim)">{{ project.matches|length }} matches</span>
   </form>
+  {% else %}
+  <div style="margin-bottom:10px;font:12px Inter">
+    <span class="mono" style="color:var(--text-dim)">{{ project.matches|length }} matches (medium+)</span>
+  </div>
+  {% endif %}
 
   <table class="data">
     <thead><tr>

@@ -175,3 +175,48 @@ def test_render_all_is_idempotent_on_rerun(tmp_path):
     assert n1 == n2  # same page count
     # Files still exist
     assert (out_dir / "index.html").exists()
+
+
+def test_render_all_sidebar_excludes_unrendered_advisory_pages(tmp_path):
+    """Sidebar 'top advisories' must not link to pages we didn't render.
+    If we only generate pages for floor-qualifying advisories but the
+    sidebar lists a low-severity one, Cloudflare Pages serves a 404."""
+    conn = fresh_db(tmp_path)
+    # Seed both a critical (will be rendered) and a low (will NOT be rendered)
+    seed_match(conn, project_slug="o/crit", source_id="GHSA-crit",
+               severity="critical", cvss=9.8, dep_name="p1")
+    seed_match(conn, project_slug="o/low", source_id="GHSA-low",
+               severity="low", cvss=3.0, dep_name="p2")
+    out_dir = tmp_path / "out"
+
+    render_all(conn, out_dir, severity_floor=("critical", "high", "medium"),
+               base_url="")
+
+    # GHSA-low page was NOT generated
+    assert not (out_dir / "a" / "GHSA-low" / "index.html").exists()
+    # And the index page's sidebar must not link to it
+    index_html = (out_dir / "index.html").read_text()
+    assert "GHSA-low" not in index_html, (
+        "sidebar must not list advisories whose pages were not generated"
+    )
+    # But the critical advisory is in the sidebar
+    assert "GHSA-crit" in index_html
+
+
+def test_render_all_no_dead_get_forms_on_project_pages(tmp_path):
+    """The severity-filter GET form on project.html must not appear on
+    mirror pages — submit would 404 on Cloudflare Pages static hosting."""
+    conn = fresh_db(tmp_path)
+    seed_match(conn, project_slug="o/r", source_id="GHSA-crit",
+               severity="critical", cvss=9.8)
+    out_dir = tmp_path / "out"
+
+    render_all(conn, out_dir, severity_floor=("critical", "high", "medium"),
+               base_url="")
+
+    proj_html = (out_dir / "p" / "o" / "r" / "index.html").read_text()
+    # No GET forms (no filter submit button)
+    assert 'method="GET"' not in proj_html
+    assert 'method="get"' not in proj_html
+    # The match count text is still shown
+    assert "matches" in proj_html.lower()
