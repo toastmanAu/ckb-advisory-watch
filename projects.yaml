@@ -212,3 +212,216 @@ projects:
 #   actively maintained + dep-heavy ones above. Additions welcome; also
 #   consider: ckb-js-toolkit, capsule (both last pushed 2024 — not stale
 #   enough to skip, not fresh enough to auto-include).
+
+  # --- toastmanAu expanded seed list (added 2026-05-12) ---
+  # 82 original repos + 22 forks. Forks of upstream-already-tracked repos
+  # noted with '(fork)' — kept per phill's explicit ask, may produce
+  # duplicate matches against the upstream entry (different project_id).
+  - slug: toastmanAu/armbian-ckb-userpatches
+    display_name: armbian-ckb-userpatches
+  - slug: toastmanAu/autoagent
+    display_name: autoagent (fork)
+  - slug: toastmanAu/bitaxe-eaglesong
+    display_name: bitaxe-eaglesong
+  - slug: toastmanAu/Blackbox-Binaries
+    display_name: Blackbox-Binaries
+  - slug: toastmanAu/blackboxdata-site
+    display_name: blackboxdata-site
+  - slug: toastmanAu/blackbox-devlog
+    display_name: blackbox-devlog
+  - slug: toastmanAu/build
+    display_name: build (fork)
+  - slug: toastmanAu/byterent-ui
+    display_name: byterent-ui
+  - slug: toastmanAu/CatGFX
+    display_name: CatGFX (fork)
+  - slug: toastmanAu/CKB-Block-Clock
+    display_name: CKB-Block-Clock
+  - slug: toastmanAu/ckb-chat-bridge
+    display_name: ckb-chat-bridge
+  - slug: toastmanAu/ckb-chess
+    display_name: ckb-chess
+  - slug: toastmanAu/CKB-CYD-node
+    display_name: CKB-CYD-node
+  - slug: toastmanAu/ckb-dob-minter-script
+    display_name: ckb-dob-minter-script
+  - slug: toastmanAu/ckb-embedded-research
+    display_name: ckb-embedded-research
+  - slug: toastmanAu/CKB-ESP32
+    display_name: CKB-ESP32
+  - slug: toastmanAu/ckb-esp32-signer
+    display_name: ckb-esp32-signer
+  - slug: toastmanAu/ckb-esp-flasher
+    display_name: ckb-esp-flasher
+  - slug: toastmanAu/ckb-explorer-frontend
+    display_name: ckb-explorer-frontend (fork)
+  - slug: toastmanAu/ckb-firmware
+    display_name: ckb-firmware
+  - slug: toastmanAu/ckb-halving-rfid-reader
+    display_name: ckb-halving-rfid-reader
+  - slug: toastmanAu/ckb-keyboard-s3
+    display_name: ckb-keyboard-s3
+  - slug: toastmanAu/ckb-knowledge-graph
+    display_name: ckb-knowledge-graph
+  - slug: toastmanAu/ckb-knowledge-graphs
+    display_name: ckb-knowledge-graphs
+  - slug: toastmanAu/ckb-light-client-lite
+    display_name: ckb-light-client-lite
+  - slug: toastmanAu/ckb-light-client
+    display_name: ckb-light-client (fork)
+  - slug: toastmanAu/ckb-light-esp
+    display_name: ckb-light-esp
+  - slug: toastmanAu/ckb-lora-bridge
+    display_name: ckb-lora-bridge
+  - slug: toastmanAu/ckb-lora-gateway
+    display_name: ckb-lora-gateway
+  - slug: toastmanAu/ckb-node-dashboard
+    display_name: ckb-node-dashboard
+  - slug: toastmanAu/CKB-Node
+    display_name: CKB-Node
+  - slug: toastmanAu/ckb-optimizations
+    display_name: ckb-optimizations
+  - slug: toastmanAu/ckb-s3-node
+    display_name: ckb-s3-node
+  - slug: toastmanAu/ckb-s3-wallet
+    display_name: ckb-s3-wallet
+  - slug: toastmanAu/ckb-sms-bridge
+    display_name: ckb-sms-bridge
+  - slug: toastmanAu/ckb-snapshot
+    display_name: ckb-snapshot
+  - slug: toastmanAu/ckb-standalone-debugger
+    display_name: ckb-standalone-debugger (fork)
+  - slug: toastmanAu/ckb
+    display_name: ckb (fork)
+  - slug: toastmanAu/ckbull-analysis
+    display_name: ckbull-analysis
+  - slug: toastmanAu/ckb-vm-benchmark
+    display_name: ckb-vm-benchmark
+  - slug: toastmanAu/ckb-vm
+    display_name: ckb-vm (fork)
+  - slug: toastmanAu/claude-quotes
+    display_name: claude-quotes
+  - slug: toastmanAu/ComfyUI-Trellis2-GGUF-rocm
+    display_name: ComfyUI-Trellis2-GGUF-rocm (fork)
+  - slug: toastmanAu/common-knowledge-hub
+    display_name: common-knowledge-hub
+  - slug: toastmanAu/dao-view
+    display_name: dao-view
+  - slug: toastmanAu/EducationHubArticles
+    display_name: EducationHubArticles (fork)
+  - slug: toastmanAu/ESP32-Dot-Bit-Lookup-Tool
+    display_name: ESP32-Dot-Bit-Lookup-Tool
+  - slug: toastmanAu/esphome-ckb
+    display_name: esphome-ckb (fork)
+  - slug: toastmanAu/fiber-kiosk
+    display_name: fiber-kiosk
+  - slug: toastmanAu/fiberquest-agent
+    display_name: fiberquest-agent
+  - slug: toastmanAu/fiberquest-games-db
+    display_name: fiberquest-games-db
+  - slug: toastmanAu/fiberquest-hmi
+    display_name: fiberquest-hmi
+  - slug: toastmanAu/Good-Noon
+    display_name: Good-Noon
+  - slug: toastmanAu/hyperframes-ollama
+    display_name: hyperframes-ollama (fork)
+  - slug: toastmanAu/jidsdr
+    display_name: jidsdr
+  - slug: toastmanAu/joyid-ckb-connector
+    display_name: joyid-ckb-connector
+  - slug: toastmanAu/joyid-sdk-js
+    display_name: joyid-sdk-js (fork)
+  - slug: toastmanAu/kernel-extensions
+    display_name: kernel-extensions
+  - slug: toastmanAu/kernel-vault
+    display_name: kernel-vault
+  - slug: toastmanAu/kernel-workspace
+    display_name: kernel-workspace
+  - slug: toastmanAu/key-vault-wasm
+    display_name: key-vault-wasm (fork)
+  - slug: toastmanAu/library-registry
+    display_name: library-registry (fork)
+  - slug: toastmanAu/local-messenger
+    display_name: local-messenger
+  - slug: toastmanAu/local-task-router
+    display_name: local-task-router
+  - slug: toastmanAu/meteor
+    display_name: meteor
+  - slug: toastmanAu/molecule
+    display_name: molecule (fork)
+  - slug: toastmanAu/NerdMiner_CKB
+    display_name: NerdMiner_CKB (fork)
+  - slug: toastmanAu/Nervos-Doc-Search-Bot
+    display_name: Nervos-Doc-Search-Bot
+  - slug: toastmanAu/nervos-launcher
+    display_name: nervos-launcher
+  - slug: toastmanAu/neuron
+    display_name: neuron (fork)
+  - slug: toastmanAu/node-console
+    display_name: node-console
+  - slug: toastmanAu/nrouter
+    display_name: nrouter
+  - slug: toastmanAu/openclaw-tg-webhook
+    display_name: openclaw-tg-webhook
+  - slug: toastmanAu/opi3b-dsi
+    display_name: opi3b-dsi
+  - slug: toastmanAu/orangepi-build
+    display_name: orangepi-build (fork)
+  - slug: toastmanAu/Orange-Pi-Images
+    display_name: Orange-Pi-Images
+  - slug: toastmanAu/quantum-purse
+    display_name: quantum-purse (fork)
+  - slug: toastmanAu/rag-system
+    display_name: rag-system
+  - slug: toastmanAu/ram-viewer
+    display_name: ram-viewer
+  - slug: toastmanAu/sparse-merkle-tree
+    display_name: sparse-merkle-tree (fork)
+  - slug: toastmanAu/spore-burner
+    display_name: spore-burner
+  - slug: toastmanAu/TelegramOTA
+    display_name: TelegramOTA
+  - slug: toastmanAu/TelegramSerial
+    display_name: TelegramSerial
+  - slug: toastmanAu/trellis-2-rocm-comfyui
+    display_name: trellis-2-rocm-comfyui
+  - slug: toastmanAu/Universal-Arduino-Telegram-Bot
+    display_name: Universal-Arduino-Telegram-Bot (fork)
+  - slug: toastmanAu/uv-tracker
+    display_name: uv-tracker
+  - slug: toastmanAu/webcrawler-skill
+    display_name: webcrawler-skill
+  - slug: toastmanAu/WyAuth
+    display_name: WyAuth
+  - slug: toastmanAu/wyEspAgentPay
+    display_name: wyEspAgentPay
+  - slug: toastmanAu/wyltek-bench
+    display_name: wyltek-bench
+  - slug: toastmanAu/wyltek-bug-reports
+    display_name: wyltek-bug-reports
+  - slug: toastmanAu/wyltek-bug-worker
+    display_name: wyltek-bug-worker
+  - slug: toastmanAu/Wyltek-Crypto-Tracker
+    display_name: Wyltek-Crypto-Tracker
+  - slug: toastmanAu/wyltek-embedded-builder
+    display_name: wyltek-embedded-builder
+  - slug: toastmanAu/wyltek-gpt
+    display_name: wyltek-gpt
+  - slug: toastmanAu/wyltek-industries
+    display_name: wyltek-industries
+  - slug: toastmanAu/wyltek-miniapp
+    display_name: wyltek-miniapp
+  - slug: toastmanAu/wyltek-studio
+    display_name: wyltek-studio
+  - slug: toastmanAu/wyltek-studio-SF
+    display_name: wyltek-studio-SF
+  - slug: toastmanAu/WyRelay
+    display_name: WyRelay
+  - slug: toastmanAu/wyseed
+    display_name: wyseed
+  - slug: toastmanAu/WyTerminal
+    display_name: WyTerminal
+  - slug: toastmanAu/WyVault
+    display_name: WyVault
+  - slug: toastmanAu/wyvault-lite
+    display_name: wyvault-lite
