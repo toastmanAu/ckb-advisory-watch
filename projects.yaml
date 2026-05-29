@@ -178,6 +178,22 @@ projects:
     display_name: CKB AntiScam Bot
   - slug: toastmanAu/ckb-advisory-watch
     display_name: ckb-advisory-watch (self)
+  - slug: toastmanAu/byterent-ui
+    display_name: ByteRent UI
+  - slug: toastmanAu/ckb-lora-bridge
+    display_name: CKB LoRa Bridge
+  - slug: toastmanAu/ckb-lora-gateway
+    display_name: CKB LoRa Gateway
+  - slug: toastmanAu/ckb-spawn-kit
+    display_name: CKB Spawn Kit
+  - slug: toastmanAu/fiberquest-agent
+    display_name: FiberQuest Agent
+  - slug: toastmanAu/joyid-ckb-connector
+    display_name: JoyID CKB Connector
+  - slug: toastmanAu/common-knowledge-hub
+    display_name: Common Knowledge Hub
+  - slug: toastmanAu/dao-view
+    display_name: DAO View
 
 # --- Unresolved candidates from seeds.txt (awaiting user confirmation) ---
 #

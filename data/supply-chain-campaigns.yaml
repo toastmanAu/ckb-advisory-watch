@@ -1,0 +1,102 @@
+# Supply-chain compromise campaigns.
+#
+# Distinct from the advisory pipeline: these aren't CVEs, they're
+# package names the operator has reason to believe were *themselves*
+# the payload of a supply-chain attack (typosquatting, account takeover,
+# maintainer compromise, etc).
+#
+# Schema:
+#   campaigns:
+#     - id: short-slug                   # required, unique
+#       title: human readable            # required
+#       first_seen: YYYY-MM-DD           # optional
+#       references:                      # optional, list of URLs
+#         - https://...
+#       indicators:                      # list of (ecosystem, name) entries
+#         - {ecosystem: npm,  name: "@scope/exact-package"}
+#         - {ecosystem: npm,  name: "@scope/*"}             # glob via SQL LIKE; * → %
+#         - {ecosystem: pypi, name: "exact-pkg"}
+#       affected_versions: |             # optional free-text note for the report
+#         Confirmed compromised: 1.169.x. Safe: 1.168.10 and earlier.
+#
+# Ecosystems must match values in project_dep.ecosystem
+# (current: npm, crates.io, Go). Glob is SQL LIKE — use * which is rewritten to %.
+
+campaigns:
+  - id: shai-hulud-tanstack-2026-05
+    title: Shai-Hulud / TanStack compromise (mini, May 2026)
+    first_seen: 2026-05-11
+    references:
+      - https://socket.dev/blog
+    indicators:
+      - {ecosystem: npm, name: "@tanstack/router"}
+      - {ecosystem: npm, name: "@tanstack/react-router"}
+      - {ecosystem: npm, name: "@tanstack/query-core"}
+      - {ecosystem: npm, name: "@tanstack/react-query"}
+    affected_versions: |
+      Compromised: @tanstack/router@1.169.8, @tanstack/query-core@1.166.56 (and adjacent).
+      Safe: @tanstack/router<=1.168.10, @tanstack/query-core<=1.166.27.
+
+  - id: mini-shai-hulud-ai-tooling-2026-05
+    title: Mini Shai-Hulud — AI developer tooling fan-out (May 2026)
+    first_seen: 2026-05-12
+    references:
+      - https://socket.dev/blog
+    indicators:
+      # NOTE: These are vendor-scope placeholders. Replace with confirmed
+      # IoC package names as they're published. Glob `*` matches any suffix.
+      - {ecosystem: npm,  name: "@opensearch-project/*"}
+      - {ecosystem: npm,  name: "@mistralai/*"}
+      - {ecosystem: pypi, name: "mistralai"}
+      - {ecosystem: npm,  name: "@guardrails-ai/*"}
+      - {ecosystem: pypi, name: "guardrails-ai"}
+      - {ecosystem: npm,  name: "@uipath/*"}
+      - {ecosystem: pypi, name: "uipath"}
+      - {ecosystem: npm,  name: "squawk"}
+      - {ecosystem: npm,  name: "squawk-*"}
+      - {ecosystem: pypi, name: "squawk"}
+    affected_versions: |
+      Specific compromised versions TBC. Mini-Shai-Hulud variant persists via
+      .claude/settings.json hooks and .vscode/tasks.json — npm uninstall alone
+      does not remediate. See safety-check.sh hook detector.
+
+  - id: trapdoor-campaign-2026-05
+    title: TrapDoor Campaign — crypto & AI developers targeting (May 2026)
+    first_seen: 2026-05-22
+    references:
+      - https://socket.dev/blog
+      - https://thehackernews.com
+    indicators:
+      - {ecosystem: npm, name: "defi-threat-scanner"}
+      - {ecosystem: npm, name: "prompt-engineering-toolkit"}
+      - {ecosystem: npm, name: "eth-security-auditor"}
+      - {ecosystem: npm, name: "solidity-deploy-guard"}
+      - {ecosystem: npm, name: "deployment-key-auditor"}
+      - {ecosystem: npm, name: "dev-env-bootstrapper"}
+      - {ecosystem: npm, name: "eth-wallet-sentinel"}
+      - {ecosystem: npm, name: "llm-context-compressor"}
+      - {ecosystem: npm, name: "mnemonic-safety-check"}
+      - {ecosystem: npm, name: "token-usage-tracker"}
+      - {ecosystem: pypi, name: "defi-threat-scanner"}
+      - {ecosystem: pypi, name: "prompt-engineering-toolkit"}
+      - {ecosystem: pypi, name: "eth-security-auditor"}
+      - {ecosystem: pypi, name: "solidity-deploy-guard"}
+      - {ecosystem: pypi, name: "deployment-key-auditor"}
+      - {ecosystem: pypi, name: "dev-env-bootstrapper"}
+      - {ecosystem: pypi, name: "eth-wallet-sentinel"}
+      - {ecosystem: pypi, name: "llm-context-compressor"}
+      - {ecosystem: pypi, name: "mnemonic-safety-check"}
+      - {ecosystem: pypi, name: "token-usage-tracker"}
+      - {ecosystem: crates.io, name: "defi-threat-scanner"}
+      - {ecosystem: crates.io, name: "prompt-engineering-toolkit"}
+      - {ecosystem: crates.io, name: "eth-security-auditor"}
+      - {ecosystem: crates.io, name: "solidity-deploy-guard"}
+      - {ecosystem: crates.io, name: "deployment-key-auditor"}
+      - {ecosystem: crates.io, name: "dev-env-bootstrapper"}
+      - {ecosystem: crates.io, name: "eth-wallet-sentinel"}
+      - {ecosystem: crates.io, name: "llm-context-compressor"}
+      - {ecosystem: crates.io, name: "mnemonic-safety-check"}
+      - {ecosystem: crates.io, name: "token-usage-tracker"}
+    affected_versions: |
+      Specifically targets developers by publishing malicious clones and helpers across npm, PyPI, and Crates.io.
+      Exfiltrates sensitive credentials, cloud keys, and cryptocurrency keystores, planting persistence in IDE setups (.cursorrules, CLAUDE.md).

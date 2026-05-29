@@ -83,6 +83,7 @@ async def osv_poll_loop(
 async def github_poll_loop(
     conn: sqlite3.Connection,
     client: httpx.AsyncClient,
+    config: dict,
     interval: float,
     stop: asyncio.Event,
 ) -> None:
@@ -107,6 +108,12 @@ async def github_poll_loop(
                 log.info("matcher: %d new matches after github walk", new_matches)
             except sqlite3.OperationalError as exc:
                 log.warning("matcher: skipped this tick (%r)", exc)
+
+        try:
+            from agent.campaign_watch import run_campaign_check
+            await run_campaign_check(conn, config, client)
+        except Exception as exc:
+            log.error("Campaign check failed in github_poll_loop: %r", exc)
 
         try:
             await asyncio.wait_for(stop.wait(), timeout=interval)
@@ -195,6 +202,14 @@ async def run(config: dict, schema_path: Path) -> None:
     else:
         log.warning("no github token configured — 60 req/hour rate limit applies")
 
+    # Run initial campaign watch scan on startup
+    try:
+        from agent.campaign_watch import run_campaign_check
+        async with httpx.AsyncClient(headers=github_headers) as startup_client:
+            await run_campaign_check(conn, config, startup_client)
+    except Exception as exc:
+        log.error("Initial campaign check failed at startup: %r", exc)
+
     log.info(
         "ckb-advisory-watch starting — osv=%ds, github=%ds, ecosystems=%d",
         int(osv_interval), int(github_interval), len(ecosystems),
@@ -206,7 +221,7 @@ async def run(config: dict, schema_path: Path) -> None:
         try:
             await asyncio.gather(
                 osv_poll_loop(conn, osv_client, ecosystems, osv_interval, stop),
-                github_poll_loop(conn, gh_client, github_interval, stop),
+                github_poll_loop(conn, gh_client, config, github_interval, stop),
                 start_dashboard(config, data_dir, stop),
                 telegram_poll_loop(conn, config, stop),
             )
